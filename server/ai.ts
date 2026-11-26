@@ -9,7 +9,7 @@
 //   GEMINI_DAILY_LIMIT    most Gemini answers per day for the whole server (default 500)
 // Without them the assistant uses its built-in engine and air comes from Open-Meteo.
 import { createHash } from 'node:crypto';
-import { parseOpenMeteo, naqi, type AirNow } from '../shared/air.ts';
+import { parseOpenMeteo, parseWeather, parseSensors, aqiFrom, AIR_URL, WEATHER_URL, type AirNow } from '../shared/air.ts';
 import { NOTES } from '../shared/saans/knowledge.ts';
 import { cosine } from '../shared/saans/retrieve.ts';
 import {
@@ -57,6 +57,7 @@ const MODEL_CANDIDATES = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5
 const META = 'http://metadata.google.internal/computeMetadata/v1';
 const CACHE_MS = 10 * 60000;
 const CACHE_MAX = 300;
+const AIR_CACHE_MAX = 200;
 const BREAKER_FAILS = 3;
 const BREAKER_MS = 60000;
 
@@ -232,20 +233,27 @@ export class Ai {
     }
   }
 
-  /** Air for a ~10 km cell: Google's current conditions when keyed, CAMS forecast for the hours. */
+  /**
+   * Air for a ~10 km cell: CAMS forecast (24-h CPCB AQI), the weather that traps smog, nearby
+   * community sensors, and Google's current conditions when keyed. Fetched in parallel; cached
+   * 30 min (failures only 2 min, so a blip doesn't hide the air for half an hour); the cache is
+   * bounded (oldest entries go first).
+   */
   async air(lat: number, lon: number): Promise<AirNow | null> {
-    const key = `${lat.toFixed(1)},${lon.toFixed(1)}`;
+    const la = lat.toFixed(1), lo = lon.toFixed(1);
+    const key = `${la},${lo}`;
     const hit = this.airCache.get(key);
-    if (hit && Date.now() - hit.at < 30 * 60000) return hit.v;
-    let v: AirNow | null = null;
-    try {
-      v = await withTimeout(8000, async (signal) => {
-        const u = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat.toFixed(1)}&longitude=${lon.toFixed(1)}`
-          + '&current=pm2_5,pm10&hourly=pm2_5,pm10&timezone=Asia%2FKolkata&forecast_days=2';
-        const r = await this.f(u, { signal });
-        return r.ok ? parseOpenMeteo(await r.json()) : null;
-      });
-    } catch { v = null; }
+    if (hit && this.now - hit.at < (hit.v ? 30 : 2) * 60000) return hit.v;
+    const get = (url: string, ms = 8000) => withTimeout(ms, async (signal) => {
+      const r = await this.f(url, { signal });
+      return r.ok ? r.json() : null;
+    }).catch(() => null);
+    const [air, wx, sensors] = await Promise.all([
+      get(AIR_URL(la, lo)),
+      get(WEATHER_URL(la, lo)),
+      get(`https://data.sensor.community/airrohr/v1/filter/area=${la},${lo},8`, 6000),
+    ]);
+    let v: AirNow | null = air ? parseOpenMeteo(air, new Date(this.now)) : null;
     if (this.hasGoogleAir) {
       try {
         const g = await withTimeout(8000, async (signal) => {
@@ -259,14 +267,21 @@ export class Ai {
         const pm25 = pm('pm25'), pm10 = pm('pm10');
         if (pm25 != null) {
           v = {
-            at: g.dateTime ?? new Date().toISOString(), pm25, pm10: pm10 ?? v?.pm10 ?? pm25 * 1.6,
-            aqi: naqi(pm25, pm10), hours: v?.hours ?? [],
+            ...(v ?? { hours: [] }),
+            at: g.dateTime ?? new Date(this.now).toISOString(), pm25, pm10: pm10 ?? v?.pm10 ?? pm25 * 1.6,
+            // keep the CPCB 24-hour AQI from the forecast when we have it; otherwise this hour's estimate
+            aqi: v?.aqi.basis === '24h' ? v.aqi : aqiFrom(pm25, pm10, 'hourly')!,
             source: v ? 'Google Air Quality API (now) + CAMS forecast' : 'Google Air Quality API',
-          };
+          } as AirNow;
         }
       } catch { /* keep the CAMS reading */ }
     }
-    this.airCache.set(key, { at: Date.now(), v });
+    if (v) {
+      v.weather = wx ? parseWeather(wx, new Date(this.now)) : null;
+      v.ground = sensors ? parseSensors(sensors) : null;
+    }
+    this.airCache.set(key, { at: this.now, v });
+    if (this.airCache.size > AIR_CACHE_MAX) this.airCache.delete(this.airCache.keys().next().value!);
     return v;
   }
 }

@@ -108,7 +108,7 @@ describe('Saans answers', () => {
     expect(p.system).toMatch(/Never invent/);
     expect(p.contents[1].role).toBe('model');
     expect(p.contents.at(-1)!.role).toBe('user');
-    expect(factsFor(ctx).some((f) => /Family: 2 adults, 1 child, 1 elder, someone with asthma/.test(f))).toBe(true);
+    expect(factsFor(ctx).some((f) => /Family \(set by the user\): 2 adults, 1 child, 1 elder, someone with asthma/.test(f))).toBe(true);
   });
   it('TC-182 model output is tidied', () => {
     expect(cleanModelText('## Plan\n**Go** out\n* one\n- two\n\n\n\nend')).toBe('Plan\nGo out\n• one\n• two\n\nend');

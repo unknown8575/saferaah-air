@@ -82,21 +82,39 @@ function worstWindow(hours: AirHour[], len = 2): { start: string; end: string; p
   return w;
 }
 
-/** A plain-language plan for the next day, with the numbers that justify each step. */
-export function dayPlan(air: AirNow | null, fam: Family): DayPlan {
+/**
+ * A plain-language plan for the next day, with the numbers that justify each step.
+ * `family` is null when the user hasn't described their family: then nothing personal is
+ * assumed (a typical 12 m² bedroom is used for purifier sizing and said to be typical).
+ */
+export function dayPlan(air: AirNow | null, family: Family | null): DayPlan {
   const items: PlanItem[] = [];
   const facts: string[] = [];
-  const who = [fam.children ? 'children' : '', fam.elders ? 'elders' : '', fam.asthma ? 'someone with asthma' : '', fam.pregnant ? 'a pregnancy' : '']
+  const fam = family ?? DEFAULT_FAMILY;
+  const room = family ? `your ${fam.bedroomM2} m² bedroom` : `a typical ${fam.bedroomM2} m² bedroom`;
+  const who = !family ? [] : [fam.children ? 'children' : '', fam.elders ? 'elders' : '', fam.asthma ? 'someone with asthma' : '', fam.pregnant ? 'a pregnancy' : '']
     .filter(Boolean);
   const sensitive = who.length > 0;
   if (!air) {
     facts.push('No live air reading is available right now.');
-    return { aqi: null, band: null, verdict: 'Live air data is not available, so this plan uses general advice.', best: null, worst: null, items: generalItems(fam), facts };
+    return { aqi: null, band: null, verdict: 'Live air data is not available, so this plan uses general advice.', best: null, worst: null, items: generalItems(fam, room), facts };
   }
   const band = air.aqi.band;
   const B = AQI_BANDS[band];
-  facts.push(`AQI now ${air.aqi.value} (${B.label}, Indian National AQI), PM2.5 ${Math.round(air.pm25)} µg/m³, PM10 ${Math.round(air.pm10)} µg/m³ (${air.source}).`);
-  facts.push(`PM2.5 now is ${(air.pm25 / 15).toFixed(1)}× the WHO 24-hour guideline (15 µg/m³).`);
+  facts.push(air.aqi.basis === '24h' && air.avg24
+    ? `AQI ${air.aqi.value} (${B.label}; Indian National AQI from the 24-hour average, CPCB method: PM2.5 ${Math.round(air.avg24.pm25)}, PM10 ${Math.round(air.avg24.pm10)} µg/m³). This hour: PM2.5 ${Math.round(air.pm25)} µg/m³ (${air.source}).`
+    : `AQI about ${air.aqi.value} (${B.label}; hourly estimate, not the official 24-hour AQI), PM2.5 ${Math.round(air.pm25)} µg/m³, PM10 ${Math.round(air.pm10)} µg/m³ (${air.source}).`);
+  facts.push(`PM2.5 this hour is ${(air.pm25 / 15).toFixed(1)}× the WHO 24-hour guideline (15 µg/m³).`);
+  if (air.ground) facts.push(`Nearby community sensors: median PM2.5 ${air.ground.pm25} µg/m³ from ${air.ground.sensors} sensors (low-cost, uncorrected; they read high in humid air).`);
+  const wx = air.weather;
+  if (wx) {
+    const n = wx.now;
+    const bits = [n.tempC !== null ? `${Math.round(n.tempC)} °C` : '', n.humidity !== null ? `humidity ${Math.round(n.humidity)}%` : '',
+      n.windMs !== null ? `wind ${n.windMs.toFixed(1)} m/s` : '', n.blhM !== null ? `mixing layer ~${Math.round(n.blhM / 10) * 10} m` : '',
+      n.visibilityM !== null ? `visibility ${(n.visibilityM / 1000).toFixed(1)} km` : ''].filter(Boolean);
+    facts.push(`Weather now: ${bits.join(', ')}. Smog trap now: ${wx.smog.level}${wx.smog.reasons.length ? ` (${wx.smog.reasons.join('; ')})` : ''}.`);
+    if (wx.nextTrap) facts.push(`Smog is forecast to be trapped (inversion / calm air) from ${hourLabel(wx.nextTrap.start)} to ${hourLabel(wx.nextTrap.end)}.`);
+  }
   const best = cleanestWindow(air.hours, 2);
   const worst = worstWindow(air.hours, 2);
   const today = air.hours[0]?.time.slice(0, 10);
@@ -120,6 +138,15 @@ export function dayPlan(air: AirNow | null, fam: Family): DayPlan {
   if (worstL && atLeast(band, 'moderate')) {
     items.push({ id: 'avoid', icon: 'moon', when: worstL.label, title: 'Stay in if you can', detail: `The forecast's dirtiest hours (about ${worstL.pm25} µg/m³).` });
   }
+  // smog trap: the weather, not just the forecast number, decides when to seal the house
+  if (wx && (wx.smog.level === 'high' || wx.smog.level === 'severe')) {
+    items.push({ id: 'trap', icon: 'wind', when: 'Now', title: wx.smog.inversion ? 'Inversion now: smog is trapped near the ground' : 'Calm air: smog is building up',
+      detail: `Windows shut, purifier on, no outdoor exercise. ${wx.smog.reasons[0] ? wx.smog.reasons[0][0].toUpperCase() + wx.smog.reasons[0].slice(1) + '.' : ''}` });
+  } else if (wx?.nextTrap) {
+    items.push({ id: 'trap', icon: 'moon', when: `${hourLabel(wx.nextTrap.start)} – ${hourLabel(wx.nextTrap.end)}`, title: 'Smog trap coming: keep windows shut',
+      detail: 'Calm, cold air will hold smoke near the ground. Air the house before then; run the purifier through it.' });
+  }
+
   // 2. exercise
   if (atLeast(band, 'poor')) {
     items.push({ id: 'exercise', icon: 'activity', title: 'Move workouts indoors', detail: 'Hard exercise multiplies the air you breathe; skip runs beside busy roads.' });
@@ -130,13 +157,13 @@ export function dayPlan(air: AirNow | null, fam: Family): DayPlan {
   }
   // 4. purifier + windows
   const cadr = purifierCadr(fam.bedroomM2);
-  facts.push(`Purifier for a ${fam.bedroomM2} m² bedroom (3 m ceiling, 5 air changes/hour): CADR about ${cadr} m³/h.`);
+  facts.push(`Purifier for ${room} (3 m ceiling, 5 air changes/hour): CADR about ${cadr} m³/h.`);
   if (atLeast(band, 'moderate')) {
-    items.push({ id: 'purifier', icon: 'fan', when: 'Night', title: 'Purifier on in the bedroom', detail: `Doors and windows shut. For ${fam.bedroomM2} m², pick a CADR of at least ${cadr} m³/h.` });
+    items.push({ id: 'purifier', icon: 'fan', when: 'Night', title: 'Purifier on in the bedroom', detail: `Doors and windows shut. For ${room}, pick a CADR of at least ${cadr} m³/h.` });
   }
   if (best) items.push({ id: 'air-out', icon: 'home', when: (best.start.slice(0, 10) !== today ? 'tomorrow ' : '') + hourLabel(best.start), title: 'Air out the house for 10–15 min', detail: 'Lets out cooking fumes and stale air while outdoor air is at its best.' });
   // 5. kitchen
-  if (fam.cooking === 'wood' || fam.cooking === 'kerosene') {
+  if (family && (fam.cooking === 'wood' || fam.cooking === 'kerosene')) {
     items.push({ id: 'fuel', icon: 'cook', title: `Cook on LPG or induction instead of ${fam.cooking}`, detail: 'Solid-fuel and kerosene smoke is one of the largest indoor exposures.' });
   } else {
     items.push({ id: 'cook', icon: 'cook', title: 'Chimney on, window open while frying', detail: 'A tadka can push kitchen PM2.5 above the outdoor level for a while.' });
@@ -149,7 +176,7 @@ export function dayPlan(air: AirNow | null, fam: Family): DayPlan {
     });
   }
   // 7. commute
-  if (fam.commute) {
+  if (family && fam.commute) {
     const sw = commuteSwaps(fam.commute);
     if (sw.length) {
       const s = sw[0];
@@ -159,15 +186,15 @@ export function dayPlan(air: AirNow | null, fam: Family): DayPlan {
   }
   const verdict = `${B.label} air (AQI ${air.aqi.value}). ${B.advice}`;
   // most personal and most useful first: the UI shows the top few
-  const order = ['window', 'family', 'mask', 'purifier', 'swap', 'fuel', 'avoid', 'exercise', 'air-out', 'cook'];
+  const order = ['trap', 'window', 'family', 'mask', 'purifier', 'swap', 'fuel', 'avoid', 'exercise', 'air-out', 'cook'];
   items.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   return { aqi: air.aqi.value, band, verdict, best: bestL, worst: worstL, items, facts };
 }
 
-function generalItems(fam: Family): PlanItem[] {
+function generalItems(fam: Family, room: string): PlanItem[] {
   return [
     { id: 'window', icon: 'sun', title: 'Check the air before going out', detail: 'In winter, early mornings are often the dirtiest hours in Delhi.' },
-    { id: 'purifier', icon: 'fan', title: 'Purifier in the bedroom', detail: `For ${fam.bedroomM2} m², a CADR of about ${purifierCadr(fam.bedroomM2)} m³/h.` },
+    { id: 'purifier', icon: 'fan', title: 'Purifier in the bedroom', detail: `For ${room}, a CADR of about ${purifierCadr(fam.bedroomM2)} m³/h.` },
     { id: 'cook', icon: 'cook', title: 'Chimney on while frying', detail: 'Cooking smoke is a big indoor source.' },
   ];
 }

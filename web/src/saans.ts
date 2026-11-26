@@ -82,8 +82,9 @@ export async function openSaans(env: SaansEnv, opts: { ask?: string } = {}) {
 }
 
 function renderBody(env: SaansEnv, body: HTMLElement, msgs: HTMLElement) {
-  const fam = load().family;
-  const plan = dayPlan(airNow, fam);
+  const st = load();
+  const fam = st.family;
+  const plan = dayPlan(airNow, st.familySet ? fam : null);
   clear(body,
     heroCard(airNow),
     familyStrip(env, body, msgs, fam),
@@ -280,7 +281,9 @@ async function ask(env: SaansEnv, raw: string, msgs: HTMLElement) {
   const typing = h('div', { class: 'msg bot typing', 'aria-label': 'Saans is thinking' }, h('i'), h('i'), h('i'));
   msgs.insertBefore(typing, msgs.querySelector('.saans-chips'));
   typing.scrollIntoView({ block: 'end', behavior: 'smooth' });
-  const ctx: AssistantContext = { air: airNow, family: load().family, route: env.route() };
+  const st = load();
+  // the profile only counts once the user has set it: no invented details otherwise
+  const ctx: AssistantContext = { air: airNow, family: st.familySet ? st.family : null, route: env.route() };
   // "plant shops near me": the phone finds the places; only names, kinds and distances are sent
   const pi = placeIntentOf(q);
   let found: BrowsePlace[] | null = null;

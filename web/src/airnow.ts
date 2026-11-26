@@ -4,7 +4,7 @@
 //
 // Privacy: the position is rounded to a ~10 km cell before it leaves the phone (the
 // forecast grid is coarser than that anyway), and results live only in memory.
-import { parseOpenMeteo, type AirNow } from '../../shared/air.ts';
+import { parseOpenMeteo, parseWeather, AIR_URL, WEATHER_URL, type AirNow } from '../../shared/air.ts';
 import { API_BASE } from './api.ts';
 import type { LonLat } from '../../shared/geo.ts';
 
@@ -22,11 +22,13 @@ async function fromServer(lon: string, lat: string, signal: AbortSignal): Promis
 }
 
 async function fromOpenMeteo(lon: string, lat: string, signal: AbortSignal): Promise<AirNow | null> {
-  const u = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}`
-    + '&current=pm2_5,pm10&hourly=pm2_5,pm10&timezone=Asia%2FKolkata&forecast_days=2';
-  const r = await fetch(u, { signal });
-  if (!r.ok) return null;
-  return parseOpenMeteo(await r.json());
+  const [air, wx] = await Promise.all([
+    fetch(AIR_URL(lat, lon), { signal }).then((r) => (r.ok ? r.json() : null)),
+    fetch(WEATHER_URL(lat, lon), { signal }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+  ]);
+  const v = air ? parseOpenMeteo(air) : null;
+  if (v) v.weather = wx ? parseWeather(wx) : null;
+  return v;
 }
 
 /** Air now and the next day for the cell around `p` (null if offline). */

@@ -10,7 +10,7 @@ import { AQI_BANDS, type AirNow } from '../air.ts';
 import { NOTES, CLUSTERS, type Cluster, type Note } from './knowledge.ts';
 import { NoteIndex } from './retrieve.ts';
 import { matchIntent, type Intent as PlaceIntent } from '../kinds.ts';
-import { dayPlan, purifierCadr, commuteSwaps, TRAVEL_LABEL, CO2_PER_KM, atLeast, type Family, type DayPlan } from './plan.ts';
+import { dayPlan, purifierCadr, commuteSwaps, TRAVEL_LABEL, CO2_PER_KM, atLeast, DEFAULT_FAMILY, type Family, type DayPlan } from './plan.ts';
 
 export interface RouteSummary {
   mode: string;
@@ -33,7 +33,8 @@ export interface PlaceLite {
 }
 export interface AssistantContext {
   air: AirNow | null;
-  family: Family;
+  /** null when the user hasn't described their family: nothing personal may be assumed */
+  family: Family | null;
   route?: RouteSummary | null;
   /** places the phone found for a "near me" question */
   places?: { title: string; items: PlaceLite[] } | null;
@@ -90,13 +91,18 @@ export function groundingNotes(q: string, dense?: number[]): Note[] {
 export function factsFor(ctx: AssistantContext, plan = dayPlan(ctx.air, ctx.family)): string[] {
   const f = [...plan.facts];
   const fam = ctx.family;
-  const members = [`${fam.adults} adult${fam.adults === 1 ? '' : 's'}`];
-  if (fam.children) members.push(`${fam.children} child${fam.children > 1 ? 'ren' : ''}`);
-  if (fam.elders) members.push(`${fam.elders} elder${fam.elders > 1 ? 's' : ''}`);
-  if (fam.asthma) members.push('someone with asthma');
-  if (fam.pregnant) members.push('a pregnant family member');
-  f.push(`Family: ${members.join(', ')}; cooks with ${fam.cooking}; bedroom ${fam.bedroomM2} m².`);
-  if (fam.commute) f.push(`Commute: ${fam.commute.km} km each way by ${TRAVEL_LABEL[fam.commute.mode]} (≈${Math.round(CO2_PER_KM[fam.commute.mode] * fam.commute.km * 44)} kg CO₂ a month).`);
+  if (!fam) {
+    f.push('Family profile: NOT SET. Do not assume anything about the user\'s family, home, room size, cooking or commute; give general advice and suggest setting up the family profile in Saans for a personal plan.');
+  } else {
+    const members = [`${fam.adults} adult${fam.adults === 1 ? '' : 's'}`];
+    if (fam.children) members.push(`${fam.children} child${fam.children > 1 ? 'ren' : ''}`);
+    if (fam.elders) members.push(`${fam.elders} elder${fam.elders > 1 ? 's' : ''}`);
+    if (fam.asthma) members.push('someone with asthma');
+    if (fam.pregnant) members.push('a pregnant family member');
+    f.push(`Family (set by the user): ${members.join(', ')}; cooks with ${fam.cooking}; bedroom ${fam.bedroomM2} m².`);
+  }
+  f.push('Coverage: live air readings, weather and routes are for Delhi NCT only.');
+  if (fam?.commute) f.push(`Commute: ${fam.commute.km} km each way by ${TRAVEL_LABEL[fam.commute.mode]} (≈${Math.round(CO2_PER_KM[fam.commute.mode] * fam.commute.km * 44)} kg CO₂ a month).`);
   const pl = ctx.places;
   if (pl) {
     f.push(pl.items.length
@@ -121,7 +127,9 @@ Help families breathe less polluted air: daily routines timed to the forecast, i
 Rules:
 - Use ONLY the numbers in FACTS. Never invent, estimate or recompute figures. If a number is not in FACTS, describe it in words.
 - Base advice on NOTES and cite them like [1] or [2] right after the sentence they support.
-- Tailor the answer to the family and today's air in FACTS. Be specific: name times, rooms, people.
+- Tailor the answer to the family and today's air in FACTS. Be specific: name times, rooms, people. If FACTS say the family profile is NOT SET, do not personalise: never say what the user cooks with, how big their room is or who lives with them.
+- Live readings and routes cover Delhi NCT only. If asked about another city, say so plainly and give only general advice.
+- When FACTS mention a smog trap (temperature inversion, calm air, shallow mixing layer), explain it simply and say what to do (windows shut, purifier on, no outdoor exercise until it lifts).
 - Keep it short: at most 140 words, a one-line answer first, then up to 5 short bullet points. No headings, no tables.
 - Reply in the user's language and script (English, Hindi or Hinglish).
 - You are not a doctor. For breathing trouble, chest pain or a child wheezing, say to get medical help and call 112 in an emergency.
@@ -180,7 +188,9 @@ export function compose(q: string, ctx: AssistantContext, notes = groundingNotes
   const air = ctx.air;
   const band = plan.band;
   const lead = air && band ? `Right now: AQI ${air.aqi.value}, ${AQI_BANDS[band].label.toLowerCase()}.` : 'I could not get a live air reading, so this is general advice.';
-  const fam = ctx.family;
+  const fam = ctx.family ?? DEFAULT_FAMILY;
+  const own = ctx.family !== null;
+  const room = own ? `your ${fam.bedroomM2} m² bedroom` : `a typical ${fam.bedroomM2} m² bedroom`;
 
   switch (intent) {
     case 'places': {
@@ -191,7 +201,7 @@ export function compose(q: string, ctx: AssistantContext, notes = groundingNotes
       lines.push(`${pl.title} near you${open.length ? ` (${open.length} open now)` : ''}:`);
       for (const p of pl.items.slice(0, 5)) lines.push(`• ${p.name} — ${p.distM < 1000 ? `${p.distM} m` : `${(p.distM / 1000).toFixed(1)} km`}${p.open === null ? '' : p.open ? ', open' : ', closed'}${p.similar ? ` (${p.kind.toLowerCase()})` : ''}`);
       if (/plant|nurser/i.test(pl.title)) lines.push(`• Plants are lovely, but they don't clean room air measurably; for that use a purifier${cite(notes, 'plants')}.`);
-      if (/purifier/i.test(pl.title)) lines.push(`• Pick a CADR of at least ${purifierCadr(fam.bedroomM2)} m³/h for your ${fam.bedroomM2} m² bedroom${cite(notes, 'purifier-size')}.`);
+      if (/purifier/i.test(pl.title)) lines.push(`• Pick a CADR of at least ${purifierCadr(fam.bedroomM2)} m³/h for ${room}${cite(notes, 'purifier-size')}.`);
       if (/medical/i.test(pl.title) && /mask|n95/i.test(q)) lines.push(`• Ask for a fitted N95 (not cloth or loose surgical)${cite(notes, 'mask')}.`);
       break;
     }
@@ -202,7 +212,8 @@ export function compose(q: string, ctx: AssistantContext, notes = groundingNotes
     }
     case 'purifier': {
       const cadr = purifierCadr(fam.bedroomM2);
-      lines.push(`For your ${fam.bedroomM2} m² bedroom, choose a purifier with a CADR of at least ${cadr} m³/h${cite(notes, 'purifier-size')}.`);
+      lines.push(`For ${room}, choose a purifier with a CADR of at least ${cadr} m³/h${cite(notes, 'purifier-size')}.`);
+      if (!own) lines.push('• Set your room size in the family profile for an exact number.');
       lines.push('• Run it with the door and windows shut, all night on medium.');
       lines.push(`• True HEPA (H13) filter; skip ionizer or ozone models${cite(notes, 'purifier-care')}.`);
       lines.push(`• Living room of 20 m²? Aim for about ${purifierCadr(20)} m³/h.`);
@@ -226,7 +237,7 @@ export function compose(q: string, ctx: AssistantContext, notes = groundingNotes
       break;
     }
     case 'swaps': {
-      if (fam.commute) {
+      if (own && fam.commute) {
         const sw = commuteSwaps(fam.commute);
         lines.push(sw.length
           ? `Your biggest swap is the commute${cite(notes, 'co2-modes')}:`
@@ -238,12 +249,12 @@ export function compose(q: string, ctx: AssistantContext, notes = groundingNotes
       }
       lines.push(`• Engine off at long red lights${cite(notes, 'idling')}.`);
       lines.push(`• Compost leaves and waste; never burn them${cite(notes, 'burning')}.`);
-      if (fam.cooking === 'wood' || fam.cooking === 'kerosene') lines.push(`• Switch from ${fam.cooking} to LPG or induction${cite(notes, 'cooking-fuel')}.`);
+      if (own && (fam.cooking === 'wood' || fam.cooking === 'kerosene')) lines.push(`• Switch from ${fam.cooking} to LPG or induction${cite(notes, 'cooking-fuel')}.`);
       break;
     }
     case 'mask': {
       lines.push(`${lead} ${firstSentences(notes.find((n) => n.id === 'mask')?.text ?? '', 2)}${cite(notes, 'mask')}`);
-      if (fam.children) lines.push('• For children: a child-size N95 only if it fits; no masks under 2.');
+      if (own && fam.children) lines.push('• For children: a child-size N95 only if it fits; no masks under 2.');
       if (band && !atLeast(band, 'poor')) lines.push('• Today a mask is optional for short trips.');
       break;
     }

@@ -13,7 +13,7 @@ import type { LonLat } from '../shared/geo.ts';
 import { sendSms, smsConfigured } from './notify.ts';
 import { Ai } from './ai.ts';
 import { DEFAULT_FAMILY, TRAVEL_LABEL, type Family, type Travel } from '../shared/saans/plan.ts';
-import { naqi, type AirNow } from '../shared/air.ts';
+import { aqiFrom, smogOf, inCoverageArea, type AirNow, type Weather, type WeatherHour } from '../shared/air.ts';
 import type { AssistantContext, Turn } from '../shared/saans/assistant.ts';
 
 export interface AppOptions {
@@ -31,8 +31,9 @@ export interface AppOptions {
 
 const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
 
-/** Accept only the family fields we know, with sane ranges. */
-export function cleanFamily(f: any): Family {
+/** Accept only the family fields we know, with sane ranges; null when the user hasn't set a profile. */
+export function cleanFamily(f: any): Family | null {
+  if (!f || typeof f !== 'object' || Array.isArray(f)) return null;
   const d = DEFAULT_FAMILY;
   const c = f?.commute;
   return {
@@ -51,10 +52,29 @@ export function cleanFamily(f: any): Family {
 export function cleanAir(a: any): AirNow | null {
   if (!a || typeof a.pm25 !== 'number' || !Number.isFinite(a.pm25)) return null;
   const pm25 = num(a.pm25, 0, 1500, 0), pm10 = num(a.pm10, 0, 2000, pm25 * 1.6);
+  const isTime = (x: unknown): x is string => typeof x === 'string' && /^\d{4}-\d\d-\d\dT\d\d/.test(x);
   const hours = Array.isArray(a.hours) ? a.hours.slice(0, 48)
-    .filter((x: any) => typeof x?.time === 'string' && /^\d{4}-\d\d-\d\dT\d\d/.test(x.time) && typeof x.pm25 === 'number')
+    .filter((x: any) => isTime(x?.time) && typeof x.pm25 === 'number')
     .map((x: any) => ({ time: x.time.slice(0, 16), pm25: num(x.pm25, 0, 1500, 0), pm10: num(x.pm10, 0, 2000, 0) })) : [];
-  return { at: String(a.at ?? '').slice(0, 25), pm25, pm10, aqi: naqi(pm25, pm10), hours, source: String(a.source ?? 'app').slice(0, 80) };
+  const avg = a.avg24 && typeof a.avg24.pm25 === 'number'
+    ? { pm25: num(a.avg24.pm25, 0, 1500, 0), pm10: num(a.avg24.pm10, 0, 2000, 0), hours: Math.round(num(a.avg24.hours, 0, 24, 0)) } : undefined;
+  // the AQI is recomputed here (never trusted from the client): 24-hour CPCB rule when the averages exist
+  const aqi = (avg && avg.hours >= 16 ? aqiFrom(avg.pm25, avg.pm10, '24h') : aqiFrom(pm25, pm10, 'hourly'))!;
+  // weather: only numbers are accepted; the smog verdict is recomputed from them
+  const w = a.weather?.now;
+  const nn = (x: unknown, lo: number, hi: number) => (typeof x === 'number' && Number.isFinite(x) ? Math.min(hi, Math.max(lo, x)) : null);
+  const wxNow: WeatherHour | null = w && isTime(w.time) ? {
+    time: w.time.slice(0, 16), tempC: nn(w.tempC, -20, 55), humidity: nn(w.humidity, 0, 100), windMs: nn(w.windMs, 0, 60),
+    windDir: nn(w.windDir, 0, 360), visibilityM: nn(w.visibilityM, 0, 100000), blhM: nn(w.blhM, 0, 6000), temp925C: nn(w.temp925C, -40, 50),
+  } : null;
+  const trap = a.weather?.nextTrap;
+  const weather: Weather | null = wxNow ? {
+    now: wxNow, smog: smogOf(wxNow), hours: [],
+    nextTrap: trap && isTime(trap.start) && isTime(trap.end) ? { start: trap.start.slice(0, 16), end: trap.end.slice(0, 16) } : null,
+  } : null;
+  const ground = a.ground && typeof a.ground.pm25 === 'number'
+    ? { pm25: Math.round(num(a.ground.pm25, 0, 1000, 0)), sensors: Math.round(num(a.ground.sensors, 0, 500, 0)), source: 'Sensor.Community (low-cost, uncorrected)' } : null;
+  return { at: String(a.at ?? '').slice(0, 25), pm25, pm10, aqi, avg24: avg, hours, source: String(a.source ?? 'app').slice(0, 80), weather, ground };
 }
 
 /**
@@ -104,7 +124,7 @@ export const SECURITY_HEADERS: Record<string, string> = {
 export const CSP = [
   "default-src 'self'", "script-src 'self'", "worker-src 'self' blob:", "child-src 'self' blob:",
   "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob: https://api.tomtom.com", "font-src 'self' data:",
-  "connect-src 'self' https://air-quality-api.open-meteo.com https://api.tomtom.com", "manifest-src 'self'",
+  "connect-src 'self' https://air-quality-api.open-meteo.com https://api.open-meteo.com https://api.tomtom.com", "manifest-src 'self'",
   "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'",
 ].join('; ');
 
@@ -238,7 +258,9 @@ export function createApp(opts: AppOptions): Server {
     'GET /api/air': async (req) => {
       const u = new URL(req.url ?? '/', 'http://x');
       const lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon'));
-      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new HttpError(400, 'Invalid position');
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new HttpError(400, 'Invalid position');
+      // this service only has street data and advice for Delhi NCT, so it only proxies air data there
+      if (!inCoverageArea(lat, lon)) throw new HttpError(400, 'Air data is available for Delhi NCT only');
       if (!opts.ai) throw new HttpError(503, 'Air data not configured');
       const v = await opts.ai.air(Math.round(lat * 10) / 10, Math.round(lon * 10) / 10);
       if (!v) throw new HttpError(502, 'Air data unavailable');
