@@ -7,6 +7,9 @@ import { adviseTrip } from '../../shared/advice.ts';
 import { ROAD_CLASSES, RC, F_FOOT, F_VEHICLE, F_ONEWAY, type Mode } from '../../shared/modes.ts';
 import { delhi, ist, TRIPS } from '../helpers.ts';
 
+// timing budgets are for a developer machine; shared CI runners (with coverage on) get a multiple
+const BUDGET = Number(process.env.PERF_BUDGET_SCALE ?? 1);
+
 const { g, router, pois } = delhi();
 const plan = (trip: keyof typeof TRIPS, mode: Mode, t: string, profile: 'woman' | 'child' = 'woman') => {
   const when = ist(t);
@@ -113,7 +116,7 @@ describe('tiered routes (FR-3, FR-4)', () => {
     const r = plan('lajpatSoami', 'walk', '22:30');
     const ms = performance.now() - t;
     expect(r.routes.length).toBeGreaterThan(0);
-    expect(ms).toBeLessThan(500);
+    expect(ms).toBeLessThan(500 * BUDGET);
   });
 
   it('TC-29 routes explain themselves', () => {
@@ -153,7 +156,7 @@ describe('tiered routes (FR-3, FR-4)', () => {
       const ms = performance.now() - t;
       expect(r.error).toBeUndefined();
       expect(r.routes.length).toBeGreaterThanOrEqual(1);
-      expect(ms).toBeLessThan(4000);
+      expect(ms).toBeLessThan(4000 * BUDGET);
       const crow = Math.hypot((TRIPS[trip].from[0] - TRIPS[trip].to[0]) * 97.6, (TRIPS[trip].from[1] - TRIPS[trip].to[1]) * 111.2) * 1000;
       expect(r.routes[0].lengthM).toBeGreaterThan(crow);
       expect(r.routes[0].lengthM).toBeLessThan(crow * 2.2);

@@ -160,11 +160,19 @@ export function createApp(opts: AppOptions): Server {
   async function body(req: IncomingMessage): Promise<any> {
     const chunks: Buffer[] = [];
     let size = 0;
+    let tooBig = false;
     for await (const c of req) {
       size += (c as Buffer).length;
-      if (size > 512 * 1024) throw new HttpError(413, 'Request too large');
+      if (size > 512 * 1024) {
+        // keep draining (up to 4 MB) so the client gets a clean 413 instead of a reset connection
+        tooBig = true;
+        chunks.length = 0;
+        if (size > 4 * 1024 * 1024) { req.destroy(); break; }
+        continue;
+      }
       chunks.push(c as Buffer);
     }
+    if (tooBig) throw new HttpError(413, 'Request too large');
     if (!size) return {};
     try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
     catch { throw new HttpError(400, 'Invalid JSON'); }

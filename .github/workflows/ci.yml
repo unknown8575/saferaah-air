@@ -22,4 +22,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:coverage
+        env:
+          PERF_BUDGET_SCALE: 4
       - run: npm run build
