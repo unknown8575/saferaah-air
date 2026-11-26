@@ -3,13 +3,13 @@
 Drives the real app in headless Chrome, shows a tap ripple where a finger would
 touch, captures frames and encodes six small looping GIFs into web/public/help/.
 
-usage:  npm run build && python3 -I tests/e2e/record_guides.py
+usage:  npm run build && python3 -I scripts/record_guides.py
 """
 import io, os, sys, math, shutil, subprocess, tempfile, time, socket, urllib.request
 from PIL import Image
 from playwright.sync_api import sync_playwright
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 OUT = os.path.join(ROOT, 'web', 'public', 'help')
 GL = ['--no-sandbox', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader']
 PHONE = dict(viewport={'width': 390, 'height': 844}, device_scale_factor=1, is_mobile=True, has_touch=True)
