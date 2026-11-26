@@ -1,5 +1,10 @@
 # SafeRaah — Phase 1 Blueprint
 
+> **Context.** This is the blueprint of the original SafeRaah street-safety router, which SafeRaah Air is built on.
+> In SafeRaah Air the main user is a **Delhi family managing polluted air** (see the README and
+> [`11-clean-air.md`](11-clean-air.md)); the street-safety features described here stay in the app as an
+> **optional add-on** (route safety at night, trusted contacts, SOS), reached from the menu.
+
 *SafeRaah* (सुरक्षित राह, "safe path") is a navigation app for India that shows up to **four routes ranked from fastest-but-riskiest to safest**, for walking, scooty/bike, auto or car, and tells your people when you reach.
 
 ## 1. Goal and principles

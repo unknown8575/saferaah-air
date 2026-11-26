@@ -1,10 +1,11 @@
 # SafeRaah — Phase 2 Requirements & Development Plan
 
 ## 1. Users
-* **Woman travelling alone** (main user) — often at night, last-mile walk or auto from metro.
-* **Parent / child** — child walking to tuition/school; parent wants arrival confirmation.
-* **Anyone** who wants a safer route.
-* **Trusted contact** — receives arrival/SOS messages and opens the live trip link (no app needed).
+* **Delhi family** (main user, SafeRaah Air) — parents, children, grandparents, sometimes someone with asthma or a pregnancy; want to know today's air, when to go out, which way to go, what to fix at home and what to change (FR-30 onwards).
+* *Optional safety add-on users* (from the original SafeRaah):
+  * **Woman travelling alone** — often at night, last-mile walk or auto from metro.
+  * **Parent / child** — child walking to tuition/school; parent wants arrival confirmation.
+  * **Trusted contact** — receives arrival/SOS messages and opens the live trip link (no app needed).
 
 ## 2. Functional requirements
 
