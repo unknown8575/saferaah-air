@@ -1,4 +1,4 @@
-# Quality gate on every push: types, lint, unit + API tests with coverage thresholds, build.
+# Quality gate on every push: types, lint, unit + UI + API tests with coverage thresholds, build, browser smoke tests.
 name: CI
 
 on:
@@ -27,3 +27,23 @@ jobs:
         env:
           PERF_BUDGET_SCALE: 4
       - run: npm run build
+
+  # Browser smoke tests on every push: first run, offline PWA, the air home, Saans,
+  # clean-air routes and the axe-core WCAG 2.1 AA audit. (The full 27-case suite: npm run test:e2e.)
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - run: npm run build
+      - run: pip install 'playwright>=1.49'
+      - name: End-to-end smoke (headless Chrome)
+        run: python3 -I tests/e2e/test_app.py tc90 tc100 tc102 tc145 tc147 tc150
