@@ -1,0 +1,575 @@
+// SafeRaah API + static file server (plain node:http, no framework).
+import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
+import { extname, join, normalize, resolve, sep } from 'node:path';
+import { gzipSync } from 'node:zlib';
+import type { DatabaseSync } from 'node:sqlite';
+import { JourneyMonitor, reviewEligibility, type Fix } from '../shared/journey.ts';
+import { MODES, type Mode } from '../shared/modes.ts';
+import { REPORT_KINDS, isReportKind } from '../shared/live.ts';
+import { haversine } from '../shared/geo.ts';
+import type { LonLat } from '../shared/geo.ts';
+import { sendSms, smsConfigured } from './notify.ts';
+import { Ai } from './ai.ts';
+import { DEFAULT_FAMILY, TRAVEL_LABEL, type Family, type Travel } from '../shared/saans/plan.ts';
+import { naqi, type AirNow } from '../shared/air.ts';
+import type { AssistantContext, Turn } from '../shared/saans/assistant.ts';
+
+export interface AppOptions {
+  db: DatabaseSync;
+  staticDir?: string;
+  graphVersion: string;
+  /** ms clock, injectable for tests */
+  now?: () => number;
+  rateLimitPerMin?: number;
+  /** Gemini / Google Air Quality client (optional keys) */
+  ai?: Ai;
+  /** behind a trusted proxy (Cloud Run): take the client address from X-Forwarded-For */
+  trustProxy?: boolean;
+}
+
+const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+
+/** Accept only the family fields we know, with sane ranges. */
+export function cleanFamily(f: any): Family {
+  const d = DEFAULT_FAMILY;
+  const c = f?.commute;
+  return {
+    adults: Math.round(num(f?.adults, 0, 12, d.adults)),
+    children: Math.round(num(f?.children, 0, 12, d.children)),
+    elders: Math.round(num(f?.elders, 0, 12, d.elders)),
+    asthma: f?.asthma === true,
+    pregnant: f?.pregnant === true,
+    cooking: ['lpg', 'induction', 'wood', 'kerosene'].includes(f?.cooking) ? f.cooking : d.cooking,
+    bedroomM2: Math.round(num(f?.bedroomM2, 4, 80, d.bedroomM2)),
+    commute: c && typeof c === 'object' && Object.hasOwn(TRAVEL_LABEL, c.mode)
+      ? { mode: c.mode as Travel, km: Math.round(num(c.km, 0.5, 80, 5) * 10) / 10 } : null,
+  };
+}
+/** Air reading sent by the app (it only shapes that user's own answer). */
+export function cleanAir(a: any): AirNow | null {
+  if (!a || typeof a.pm25 !== 'number' || !Number.isFinite(a.pm25)) return null;
+  const pm25 = num(a.pm25, 0, 1500, 0), pm10 = num(a.pm10, 0, 2000, pm25 * 1.6);
+  const hours = Array.isArray(a.hours) ? a.hours.slice(0, 48)
+    .filter((x: any) => typeof x?.time === 'string' && /^\d{4}-\d\d-\d\dT\d\d/.test(x.time) && typeof x.pm25 === 'number')
+    .map((x: any) => ({ time: x.time.slice(0, 16), pm25: num(x.pm25, 0, 1500, 0), pm10: num(x.pm10, 0, 2000, 0) })) : [];
+  return { at: String(a.at ?? '').slice(0, 25), pm25, pm10, aqi: naqi(pm25, pm10), hours, source: String(a.source ?? 'app').slice(0, 80) };
+}
+
+/**
+ * Privacy (see docs/10-privacy.md):
+ *  - GPS points of a trip are kept only while the trip is running (for the live link and
+ *    to verify the trip) and are deleted the moment it ends.
+ *  - At the end the route, destination and name are erased too; what is left (status and
+ *    the list of street segments, needed for the optional review) is deleted after the
+ *    review, or after REVIEW_WINDOW_MS if the traveller does not answer.
+ *  - A review keeps no trip, no comment and no device id: each street gets a vote under its
+ *    own one-way pseudonym, so votes cannot be linked to each other, to reports or to trips.
+ *    Votes are deleted after a year.
+ *  - Live reports are deleted when they expire.
+ */
+export const REVIEW_WINDOW_MS = 60 * 60 * 1000;
+export const ABANDONED_TRIP_MS = 12 * 3600 * 1000;
+/** street votes are deleted after a year (by then they would count for less than 6%) */
+export const VOTE_LIFETIME_MS = 365 * 86400000;
+
+class HttpError extends Error {
+  constructor(readonly status: number, msg: string) { super(msg); }
+}
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.woff': 'font/woff',
+  '.json': 'application/json', '.bin': 'application/octet-stream', '.svg': 'image/svg+xml', '.png': 'image/png',
+  '.gif': 'image/gif', '.webmanifest': 'application/manifest+json', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
+  '.pbf': 'application/x-protobuf', '.webp': 'image/webp', '.mp4': 'video/mp4', '.md': 'text/markdown; charset=utf-8',
+};
+
+const TAGS = new Set(['felt_safe', 'well_lit', 'busy', 'police_seen', 'shops_open', 'dark', 'deserted',
+  'harassment', 'followed', 'stray_dogs', 'bad_footpath', 'drunk_people']);
+
+/** Sent with every response: no MIME sniffing, no framing, no referrer, only the browser features the app uses. */
+export const SECURITY_HEADERS: Record<string, string> = {
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+  'referrer-policy': 'no-referrer',
+  'permissions-policy': 'geolocation=(self), microphone=(self), camera=(), payment=(), usb=()',
+  'cross-origin-opener-policy': 'same-origin',
+};
+/**
+ * Content Security Policy for the app page: scripts only from this origin, workers from this
+ * origin or blob: (MapLibre), network only to this server and the public air-quality forecast.
+ */
+export const CSP = [
+  "default-src 'self'", "script-src 'self'", "worker-src 'self' blob:", "child-src 'self' blob:",
+  "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob: https://api.tomtom.com", "font-src 'self' data:",
+  "connect-src 'self' https://air-quality-api.open-meteo.com https://api.tomtom.com", "manifest-src 'self'",
+  "object-src 'none'", "base-uri 'self'", "form-action 'self'", "frame-ancestors 'none'",
+].join('; ');
+
+function isLonLat(p: unknown): p is LonLat {
+  return Array.isArray(p) && p.length === 2 && p.every((v) => typeof v === 'number' && Number.isFinite(v)) &&
+    Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 90;
+}
+
+export function createApp(opts: AppOptions): Server {
+  const { db } = opts;
+  const now = opts.now ?? Date.now;
+  const limit = opts.rateLimitPerMin ?? 240;
+  const buckets = new Map<string, { n: number; reset: number }>();
+  const staticRoot = opts.staticDir ? resolve(opts.staticDir) : null;
+
+  function rateLimit(key: string) {
+    const t = now();
+    let b = buckets.get(key);
+    if (!b || t > b.reset) { b = { n: 0, reset: t + 60000 }; buckets.set(key, b); }
+    if (++b.n > limit) throw new HttpError(429, 'Too many requests, slow down');
+    if (buckets.size > 10000) for (const [k, v] of buckets) if (t > v.reset) buckets.delete(k);
+  }
+
+  /**
+   * The caller's address. On Cloud Run every request arrives from Google's front end, which
+   * appends the real client address as the LAST X-Forwarded-For entry (earlier entries can be
+   * forged by the caller, so they are ignored).
+   */
+  function clientIp(req: IncomingMessage): string {
+    if (opts.trustProxy) {
+      const xff = String(req.headers['x-forwarded-for'] ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+      if (xff.length) return xff[xff.length - 1];
+    }
+    return req.socket.remoteAddress ?? '?';
+  }
+
+  // the assistant costs money per call: per phone 20 questions / 10 min, per network address
+  // 60 / hour (so a new phone id each time does not get around it); a daily cap sits in Ai
+  const aiBuckets = new Map<string, number[]>();
+  function hit(key: string, max: number, windowMs: number, msg: string) {
+    const t = now();
+    const xs = (aiBuckets.get(key) ?? []).filter((x) => t - x < windowMs);
+    if (xs.length >= max) throw new HttpError(429, msg);
+    xs.push(t);
+    aiBuckets.set(key, xs);
+    if (aiBuckets.size > 5000) for (const [k, v] of aiBuckets) if (!v.some((x) => t - x < 3600000)) aiBuckets.delete(k);
+  }
+  function aiLimit(dev: string, ip: string) {
+    hit('d:' + pseudo('ai', dev), 20, 600000, 'Saans needs a short break. Try again in a few minutes.');
+    hit('i:' + pseudo('ai-ip', ip), 60, 3600000, 'Too many questions from this network. Try again in an hour.');
+  }
+
+  async function body(req: IncomingMessage): Promise<any> {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const c of req) {
+      size += (c as Buffer).length;
+      if (size > 512 * 1024) throw new HttpError(413, 'Request too large');
+      chunks.push(c as Buffer);
+    }
+    if (!size) return {};
+    try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+    catch { throw new HttpError(400, 'Invalid JSON'); }
+  }
+
+  // one-way pseudonyms: the same phone gets unrelated ids in different tables
+  const secret = (() => {
+    db.exec('CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)');
+    const row = db.prepare("SELECT v FROM meta WHERE k = 'secret'").get() as { v: string } | undefined;
+    if (row) return row.v;
+    const v = randomBytes(32).toString('hex');
+    db.prepare("INSERT INTO meta (k, v) VALUES ('secret', ?)").run(v);
+    return v;
+  })();
+  const pseudo = (purpose: string, dev: string) => createHmac('sha256', secret).update(`${purpose}:${dev}`).digest('base64url').slice(0, 22);
+
+  /** Delete trip data that is no longer needed. Runs every few minutes and before each response that could expose it. */
+  function purge() {
+    const t = now();
+    db.prepare(`DELETE FROM journeys WHERE (status != 'active' AND status != 'sos' AND COALESCE(ended_at, 0) < ?)
+      OR started_at < ?`).run(t - REVIEW_WINDOW_MS, t - ABANDONED_TRIP_MS);
+    db.prepare('DELETE FROM reports WHERE expires_at <= ?').run(t);
+    db.prepare('DELETE FROM edge_votes WHERE updated_at < ?').run(t - VOTE_LIFETIME_MS);
+  }
+  purge();
+  const purgeTimer = setInterval(purge, 5 * 60 * 1000);
+  purgeTimer.unref?.();
+
+  function device(req: IncomingMessage): string {
+    const d = String(req.headers['x-device-id'] ?? '');
+    if (!/^[A-Za-z0-9-]{16,64}$/.test(d)) throw new HttpError(400, 'Missing or invalid x-device-id header');
+    return d;
+  }
+
+  function journeyFor(id: string, token: string): any {
+    const j = db.prepare('SELECT * FROM journeys WHERE id = ?').get(id) as any;
+    if (!j) throw new HttpError(404, 'Journey not found');
+    if (typeof token !== 'string' || !j.token || token !== j.token) throw new HttpError(403, 'Bad journey token');
+    return j;
+  }
+  /** after a trip ends, no more locations are accepted for it */
+  function stillTravelling(j: any) {
+    if (j.status !== 'active' && j.status !== 'sos') throw new HttpError(409, 'This trip has ended');
+  }
+
+  function monitorFor(j: any): JourneyMonitor {
+    const m = new JourneyMonitor({
+      mode: j.mode as Mode, route: JSON.parse(j.route_json), dest: [j.dest_lon, j.dest_lat],
+      etaS: j.eta_s, startedAt: j.started_at,
+    });
+    const fixes = db.prepare('SELECT t, lon, lat, acc FROM fixes WHERE journey_id = ? ORDER BY t').all(j.id) as unknown as Fix[];
+    for (const f of fixes) m.feed(f);
+    return m;
+  }
+
+  const routes: Record<string, (req: IncomingMessage, m: RegExpMatchArray) => Promise<unknown>> = {
+    'GET /api/health': async () => ({
+      ok: true, graphVersion: opts.graphVersion, sms: smsConfigured(),
+      gemini: !!opts.ai?.hasGemini, googleAir: !!opts.ai?.hasGoogleAir,
+    }),
+
+    // Air now + next 24 h for a ~10 km cell. Nothing about the request is stored.
+    'GET /api/air': async (req) => {
+      const u = new URL(req.url ?? '/', 'http://x');
+      const lat = Number(u.searchParams.get('lat')), lon = Number(u.searchParams.get('lon'));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new HttpError(400, 'Invalid position');
+      if (!opts.ai) throw new HttpError(503, 'Air data not configured');
+      const v = await opts.ai.air(Math.round(lat * 10) / 10, Math.round(lon * 10) / 10);
+      if (!v) throw new HttpError(502, 'Air data unavailable');
+      return v;
+    },
+
+    // Saans assistant. Questions and answers are not logged or stored.
+    'POST /api/assistant': async (req) => {
+      const dev = device(req);
+      aiLimit(dev, clientIp(req));
+      const b = await body(req);
+      const q = typeof b.q === 'string' ? b.q.trim().slice(0, 500) : '';
+      if (!q) throw new HttpError(400, 'Ask a question');
+      if (!opts.ai) throw new HttpError(503, 'Assistant not configured');
+      const route = b.ctx?.route;
+      const ctx: AssistantContext = {
+        air: cleanAir(b.ctx?.air),
+        family: cleanFamily(b.ctx?.family),
+        route: route && typeof route === 'object' ? {
+          mode: String(route.mode ?? '').slice(0, 20), minutes: Math.round(num(route.minutes, 0, 600, 0)),
+          label: String(route.label ?? 'Selected').slice(0, 30), pctLess: Math.round(num(route.pctLess, -100, 100, 0)),
+          avoided: (Array.isArray(route.avoided) ? route.avoided : []).slice(0, 4).map((x: unknown) => String(x).slice(0, 60)),
+          areas: (Array.isArray(route.areas) ? route.areas : []).slice(0, 4).map((x: unknown) => String(x).slice(0, 60)),
+        } : null,
+      };
+      const pl = b.ctx?.places;
+      ctx.places = pl && typeof pl === 'object' && Array.isArray(pl.items) ? {
+        title: String(pl.title ?? 'Places').slice(0, 40),
+        items: pl.items.slice(0, 8).filter((x: any) => x && typeof x.name === 'string').map((x: any) => ({
+          name: x.name.slice(0, 80), kind: String(x.kind ?? '').slice(0, 40),
+          distM: Math.round(num(x.distM, 0, 50000, 0) / 50) * 50,
+          open: x.open === true ? true : x.open === false ? false : null, similar: x.similar === true,
+        })),
+      } : null;
+      const history: Turn[] = (Array.isArray(b.history) ? b.history : []).slice(-4)
+        .filter((t: any) => (t?.role === 'user' || t?.role === 'assistant') && typeof t.text === 'string')
+        .map((t: any) => ({ role: t.role, text: t.text.slice(0, 600) }));
+      const a = await opts.ai.answer(q, ctx, history);
+      return { text: a.text, notes: a.notes, cluster: a.cluster, plan: a.plan, engine: a.engine, model: a.model ?? null, fallback: a.fallback ?? false, reason: a.reason ?? null, cached: a.cached ?? false };
+    },
+
+    'POST /api/journeys': async (req) => {
+      const dev = device(req);
+      rateLimit('j:' + dev);
+      const b = await body(req);
+      if (!MODES.includes(b.mode)) throw new HttpError(400, 'Invalid mode');
+      if (!Array.isArray(b.route) || b.route.length < 2 || b.route.length > 20000 || !b.route.every(isLonLat))
+        throw new HttpError(400, 'Invalid route');
+      if (!Array.isArray(b.edges) || b.edges.length > 50000 || !b.edges.every((e: unknown) => Number.isInteger(e) && (e as number) >= 0))
+        throw new HttpError(400, 'Invalid edges');
+      if (!isLonLat(b.dest)) throw new HttpError(400, 'Invalid destination');
+      if (typeof b.etaS !== 'number' || !(b.etaS > 0) || b.etaS > 6 * 3600) throw new HttpError(400, 'Invalid ETA');
+      const id = randomUUID(), token = randomBytes(24).toString('base64url'), shareId = randomBytes(16).toString('base64url');
+      const name = typeof b.name === 'string' ? b.name.slice(0, 40) : null;
+      db.prepare(`INSERT INTO journeys (id, device, token, share_id, graph_version, mode, route_json, edges_json,
+        dest_lon, dest_lat, eta_s, started_at, traveller_name, simulated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(id, dev, token, shareId, String(b.graphVersion ?? opts.graphVersion), b.mode, JSON.stringify(b.route),
+          JSON.stringify(b.edges), b.dest[0], b.dest[1], b.etaS, now(), name, b.simulated ? 1 : 0);
+      return { id, token, shareId };
+    },
+
+    'POST /api/journeys/([\\w-]+)/fixes': async (req, m) => {
+      const b = await body(req);
+      const j = journeyFor(m[1], b.token);
+      stillTravelling(j);
+      rateLimit('f:' + j.id);
+      if (!Array.isArray(b.fixes) || b.fixes.length > 500) throw new HttpError(400, 'Invalid fixes');
+      const ins = db.prepare('INSERT OR IGNORE INTO fixes (journey_id, t, lon, lat, acc) VALUES (?,?,?,?,?)');
+      let n = 0;
+      for (const f of b.fixes) {
+        if (!isLonLat([f?.lon, f?.lat]) || !Number.isFinite(f.t) || !Number.isFinite(f.acc) || f.acc < 0) continue;
+        if (f.t > now() + 60000 || f.t < j.started_at - 60000) continue; // reject clock games
+        ins.run(j.id, Math.round(f.t), f.lon, f.lat, f.acc);
+        n++;
+      }
+      return { ok: true, stored: n, status: j.status };
+    },
+
+    'POST /api/journeys/([\\w-]+)/finish': async (req, m) => {
+      const b = await body(req);
+      const j = journeyFor(m[1], b.token);
+      stillTravelling(j);
+      const mon = monitorFor(j);
+      const el = reviewEligibility(mon);
+      if (j.simulated) { el.eligible = false; el.reasons.unshift('this was a demo trip with simulated movement'); }
+      const reviewToken = el.eligible ? randomBytes(18).toString('base64url') : null;
+      // the trip is over: GPS points, route, destination and name are erased now
+      db.prepare('DELETE FROM fixes WHERE journey_id = ?').run(j.id);
+      db.prepare(`UPDATE journeys SET status = ?, arrived_at = ?, ended_at = ?, eligible = ?, coverage = ?, review_token = ?,
+          route_json = '[]', dest_lon = 0, dest_lat = 0, traveller_name = NULL,
+          edges_json = CASE WHEN ? THEN edges_json ELSE '[]' END WHERE id = ?`)
+        .run(mon.arrivedAt ? 'arrived' : 'ended', mon.arrivedAt, now(), el.eligible ? 1 : 0, el.coverage, reviewToken, el.eligible ? 1 : 0, j.id);
+      return { arrived: !!mon.arrivedAt, eligible: el.eligible, coverage: el.coverage, reasons: el.reasons, reviewToken };
+    },
+
+    'POST /api/journeys/([\\w-]+)/sos': async (req, m) => {
+      const b = await body(req);
+      const j = journeyFor(m[1], b.token);
+      db.prepare(`UPDATE journeys SET status = 'sos' WHERE id = ?`).run(j.id);
+      let sent = 0;
+      if (Array.isArray(b.contacts) && typeof b.message === 'string' && smsConfigured()) {
+        for (const to of b.contacts.slice(0, 5)) if (await sendSms(String(to), b.message.slice(0, 600))) sent++;
+      }
+      return { ok: true, shareId: j.share_id, smsSent: sent };
+    },
+
+    'POST /api/journeys/([\\w-]+)/notify': async (req, m) => {
+      const b = await body(req);
+      const j = journeyFor(m[1], b.token);
+      rateLimit('n:' + j.id);
+      let sent = 0;
+      if (Array.isArray(b.contacts) && typeof b.message === 'string' && smsConfigured()) {
+        for (const to of b.contacts.slice(0, 5)) if (await sendSms(String(to), b.message.slice(0, 600))) sent++;
+      }
+      return { ok: true, smsSent: sent };
+    },
+
+    'POST /api/journeys/([\\w-]+)/route': async (req, m) => {
+      // re-routed mid-journey: verification and review use the new route from here on
+      const b = await body(req);
+      const j = journeyFor(m[1], b.token);
+      stillTravelling(j);
+      if (!Array.isArray(b.route) || b.route.length < 2 || b.route.length > 20000 || !b.route.every(isLonLat))
+        throw new HttpError(400, 'Invalid route');
+      if (!Array.isArray(b.edges) || b.edges.length > 50000 || !b.edges.every((e: unknown) => Number.isInteger(e) && (e as number) >= 0))
+        throw new HttpError(400, 'Invalid edges');
+      if (typeof b.etaS !== 'number' || !(b.etaS > 0) || b.etaS > 6 * 3600) throw new HttpError(400, 'Invalid ETA');
+      db.prepare('UPDATE journeys SET route_json = ?, edges_json = ?, eta_s = ?, started_at = ? WHERE id = ?')
+        .run(JSON.stringify(b.route), JSON.stringify(b.edges), b.etaS, now(), j.id);
+      db.prepare('DELETE FROM fixes WHERE journey_id = ? AND t < ?').run(j.id, now() - 60000);
+      return { ok: true };
+    },
+
+    'POST /api/reports': async (req) => {
+      const dev = pseudo('report', device(req));
+      const b = await body(req);
+      if (!isReportKind(b.kind)) throw new HttpError(400, 'Unknown report type');
+      if (!isLonLat([b.lon, b.lat]) || !isLonLat([b.at?.lon, b.at?.lat])) throw new HttpError(400, 'Location needed');
+      const acc = Math.min(200, Math.max(0, Number(b.at.acc) || 0));
+      // you can only report a spot you are near
+      if (haversine(b.lon, b.lat, b.at.lon, b.at.lat) > 300 + acc) throw new HttpError(403, 'Report only places near where you are');
+      const t = now();
+      const recent = (db.prepare('SELECT COUNT(*) AS n FROM reports WHERE device = ? AND created_at > ?').get(dev, t - 3600000) as { n: number }).n;
+      if (recent >= 6) throw new HttpError(429, 'Too many reports in the last hour');
+      // the same problem already reported close by counts as a confirmation
+      const near = (db.prepare('SELECT id, lon, lat FROM reports WHERE kind = ? AND expires_at > ? AND lon BETWEEN ? AND ? AND lat BETWEEN ? AND ?')
+        .all(b.kind, t, b.lon - 0.001, b.lon + 0.001, b.lat - 0.001, b.lat + 0.001) as { id: string; lon: number; lat: number }[])
+        .find((r) => haversine(r.lon, r.lat, b.lon, b.lat) <= 80);
+      let id = near?.id;
+      if (!id) {
+        id = randomUUID();
+        db.prepare('INSERT INTO reports (id, kind, lon, lat, device, created_at, expires_at) VALUES (?,?,?,?,?,?,?)')
+          .run(id, b.kind, b.lon, b.lat, dev, t, t + REPORT_KINDS[b.kind as keyof typeof REPORT_KINDS].hours * 3600000);
+      }
+      db.prepare(`INSERT INTO report_votes (report_id, device, still, at) VALUES (?,?,1,?)
+        ON CONFLICT(report_id, device) DO UPDATE SET still = 1, at = excluded.at`).run(id, dev, t);
+      return { ok: true, id, merged: !!near };
+    },
+
+    'POST /api/reports/([\\w-]+)/vote': async (req, m) => {
+      const dev = pseudo('report', device(req));
+      rateLimit('rv:' + dev);
+      const b = await body(req);
+      const r = db.prepare('SELECT * FROM reports WHERE id = ?').get(m[1]) as any;
+      if (!r || r.expires_at <= now()) throw new HttpError(404, 'Report has expired');
+      if (typeof b.still !== 'boolean') throw new HttpError(400, 'Say whether it is still there');
+      if (!isLonLat([b.at?.lon, b.at?.lat]) || haversine(r.lon, r.lat, b.at.lon, b.at.lat) > 500 + Math.min(200, Number(b.at.acc) || 0))
+        throw new HttpError(403, 'Only people near the spot can confirm it');
+      db.prepare(`INSERT INTO report_votes (report_id, device, still, at) VALUES (?,?,?,?)
+        ON CONFLICT(report_id, device) DO UPDATE SET still = excluded.still, at = excluded.at`).run(r.id, dev, b.still ? 1 : 0, now());
+      return { ok: true };
+    },
+
+    'GET /api/reports': async (req) => {
+      const q = new URL(req.url ?? '', 'http://x').searchParams.get('bbox') ?? '';
+      const [w, s, e, n] = q.split(',').map(Number);
+      if (![w, s, e, n].every(Number.isFinite) || e - w > 2 || n - s > 2) throw new HttpError(400, 'bbox=w,s,e,n needed (max 2°)');
+      const t = now();
+      const rows = db.prepare(`SELECT r.id, r.kind, r.lon, r.lat, r.created_at AS createdAt, r.expires_at AS expiresAt,
+          COALESCE(SUM(v.still = 1), 0) AS confirms, COALESCE(SUM(v.still = 0), 0) AS dismisses
+        FROM reports r LEFT JOIN report_votes v ON v.report_id = r.id
+        WHERE r.expires_at > ? AND r.lon BETWEEN ? AND ? AND r.lat BETWEEN ? AND ?
+        GROUP BY r.id ORDER BY r.created_at DESC LIMIT 500`).all(t, w, e, s, n) as any[];
+      return { now: t, reports: rows.filter((r) => r.dismisses <= r.confirms) };
+    },
+
+    'POST /api/reviews': async (req) => {
+      const dev = device(req);
+      rateLimit('r:' + dev);
+      const b = await body(req);
+      purge();
+      const j = db.prepare('SELECT * FROM journeys WHERE id = ?').get(String(b.journeyId)) as any;
+      if (!j) throw new HttpError(404, 'This trip has ended and its data was deleted');
+      if (!j.eligible || !j.review_token || b.reviewToken !== j.review_token)
+        throw new HttpError(403, 'This journey is not verified for a review');
+      if (j.device !== dev) throw new HttpError(403, 'Only the traveller can review this journey');
+      if (j.reviewed) throw new HttpError(409, 'Already reviewed');
+      const rating = b.rating;
+      if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5)
+        throw new HttpError(400, 'Rating must be a whole number from 1 to 5');
+      const tags = Array.isArray(b.tags) ? b.tags.filter((t: unknown) => typeof t === 'string' && TAGS.has(t)).slice(0, 8) : [];
+      const t = now();
+      // round the time to the day so a vote cannot be matched to a trip by its timestamp
+      const day = Math.floor(t / 86400000) * 86400000;
+      // a separate pseudonym for every street: still one vote per person per street, but one
+      // person's votes cannot be grouped together (a set of streets could hint where they live)
+      const voterFor = (e: number) => pseudo(`vote:${e}`, dev);
+      db.exec('BEGIN');
+      try {
+        const up = db.prepare(`INSERT INTO edge_votes (graph_version, edge, device, rating, tags, updated_at) VALUES (?,?,?,?,?,?)
+          ON CONFLICT(graph_version, edge, device) DO UPDATE SET rating = excluded.rating, tags = excluded.tags, updated_at = excluded.updated_at`);
+        const tagStr = tags.join(',');
+        for (const e of new Set<number>(JSON.parse(j.edges_json))) up.run(j.graph_version, e, voterFor(e), rating, tagStr, day);
+        // only a bare "reached safely" status stays for the family's link, until the hourly clean-up
+        db.prepare(`UPDATE journeys SET edges_json = '[]', review_token = NULL, reviewed = 1, device = '', token = '' WHERE id = ?`).run(j.id);
+        db.exec('COMMIT');
+      } catch (err) { db.exec('ROLLBACK'); throw err; }
+      return { ok: true };
+    },
+
+    'GET /api/crowd': async (req) => {
+      const v = new URL(req.url ?? '', 'http://x').searchParams.get('v') ?? opts.graphVersion;
+      // Each device counts once per segment; votes decay with a 90-day half-life.
+      const rows = db.prepare(`SELECT edge, rating, updated_at FROM edge_votes WHERE graph_version = ?`)
+        .all(v) as { edge: number; rating: number; updated_at: number }[];
+      const agg = new Map<number, { w: number; s: number }>();
+      const t = now(), HALF = 90 * 86400000;
+      for (const r of rows) {
+        const w = Math.pow(0.5, Math.max(0, t - r.updated_at) / HALF);
+        const a = agg.get(r.edge) ?? { w: 0, s: 0 };
+        a.w += w; a.s += w * r.rating;
+        agg.set(r.edge, a);
+      }
+      return { v, stats: [...agg].map(([e, a]) => [e, +a.w.toFixed(2), +(a.s / a.w).toFixed(3)]) };
+    },
+
+    'GET /api/share/([\\w-]+)': async (_req, m) => {
+      purge();
+      const j = db.prepare('SELECT * FROM journeys WHERE share_id = ?').get(m[1]) as any;
+      if (!j) throw new HttpError(404, 'This trip has ended and its location data was deleted');
+      const last = db.prepare('SELECT t, lon, lat, acc FROM fixes WHERE journey_id = ? ORDER BY t DESC LIMIT 1').get(j.id);
+      const stale = now() - j.started_at > 12 * 3600 * 1000;
+      return {
+        status: stale && j.status === 'active' ? 'expired' : j.status, mode: j.mode, name: j.traveller_name,
+        route: JSON.parse(j.route_json), dest: j.dest_lon || j.dest_lat ? [j.dest_lon, j.dest_lat] : null, etaS: j.eta_s,
+        startedAt: j.started_at, arrivedAt: j.arrived_at, last: last ?? null,
+      };
+    },
+  };
+  const compiled = Object.entries(routes).map(([k, fn]) => {
+    const [method, path] = k.split(' ');
+    return { method, re: new RegExp(`^${path}$`), fn };
+  });
+
+  // Static files are read and compressed once, then served from memory with an ETag, so
+  // repeat visits get a 304 and the 25 MB road graph is not re-gzipped on every request.
+  const staticCache = new Map<string, { mtime: number; etag: string; type: string; raw: Buffer; gz: Buffer | null }>();
+  let staticBytes = 0;
+  const STATIC_CACHE_MAX = 160 * 1024 * 1024;
+
+  async function serveStatic(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+    if (!staticRoot || (req.method !== 'GET' && req.method !== 'HEAD')) return false;
+    let p: string;
+    try { p = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname); } catch { throw new HttpError(400, 'Bad path'); }
+    if (p.includes('\0')) throw new HttpError(400, 'Bad path');
+    if (p.endsWith('/')) p += 'index.html';
+    const file = normalize(join(staticRoot, p));
+    // must stay inside the web root (a bare prefix check would let "/../dist-evil" through)
+    if (file !== staticRoot && !file.startsWith(staticRoot + sep)) return false;
+    let s;
+    try { s = await stat(file); } catch { return false; }
+    if (!s.isFile()) return false;
+    let entry = staticCache.get(file);
+    if (!entry || entry.mtime !== s.mtimeMs) {
+      const raw = await readFile(file);
+      const type = MIME[extname(file)] ?? 'application/octet-stream';
+      const gz = /json|javascript|css|html|octet|svg|protobuf|markdown/.test(type) && raw.length > 1024 ? gzipSync(raw) : null;
+      entry = { mtime: s.mtimeMs, etag: `"${createHash('sha1').update(raw).digest('base64url').slice(0, 20)}"`, type, raw, gz };
+      if (staticBytes + raw.length + (gz?.length ?? 0) < STATIC_CACHE_MAX) {
+        staticCache.set(file, entry);
+        staticBytes += raw.length + (gz?.length ?? 0);
+      }
+    }
+    const headers: Record<string, string> = {
+      'content-type': entry.type, vary: 'accept-encoding',
+      'cache-control': p.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+    };
+    // Chrome fails to write very large validated entries to its HTTP cache while the service
+    // worker fetches the same file (ERR_CACHE_WRITE_FAILURE); those big files are cached by
+    // the service worker instead, so they go without an ETag.
+    if (entry.raw.length < 8 * 1024 * 1024) headers.etag = entry.etag;
+    if (entry.type.startsWith('text/html')) headers['content-security-policy'] = CSP;
+    if (headers.etag && req.headers['if-none-match'] === entry.etag) { res.writeHead(304, headers); res.end(); return true; }
+    const useGz = entry.gz && /gzip/.test(String(req.headers['accept-encoding']));
+    if (useGz) headers['content-encoding'] = 'gzip';
+    res.writeHead(200, headers);
+    res.end(req.method === 'HEAD' ? undefined : useGz ? entry.gz : entry.raw);
+    return true;
+  }
+
+  // The Android/iOS apps load the UI from the device (capacitor://localhost or
+  // https://localhost) and call this server, so those origins may use the API.
+  const allowed = new Set(['capacitor://localhost', 'https://localhost', 'http://localhost',
+    ...(process.env.ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean)]);
+
+  return createServer(async (req, res) => {
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+    if (opts.trustProxy) res.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
+    const path = new URL(req.url ?? '/', 'http://x').pathname;
+    const origin = String(req.headers.origin ?? '');
+    if (path.startsWith('/api/') && allowed.has(origin)) {
+      res.setHeader('access-control-allow-origin', origin);
+      res.setHeader('vary', 'origin');
+      res.setHeader('access-control-allow-headers', 'content-type, x-device-id');
+      res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+    }
+    try {
+      if (path.startsWith('/api/')) {
+        rateLimit('ip:' + clientIp(req));
+        const route = compiled.find((r) => r.method === req.method && r.re.test(path));
+        if (!route) throw new HttpError(404, 'No such endpoint');
+        const out = await route.fn(req, path.match(route.re)!);
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify(out));
+        return;
+      }
+      if (await serveStatic(req, res)) return;
+      // SPA fallback
+      if (staticRoot && req.method === 'GET') {
+        const html = await readFile(join(staticRoot, 'index.html')).catch(() => null);
+        if (html) { res.writeHead(200, { 'content-type': MIME['.html'], 'content-security-policy': CSP, 'cache-control': 'no-cache' }); res.end(html); return; }
+      }
+      throw new HttpError(404, 'Not found');
+    } catch (err) {
+      const status = err instanceof HttpError ? err.status : 500;
+      if (status === 500) console.error(err);
+      res.writeHead(status, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: err instanceof HttpError ? err.message : 'Internal error' }));
+    }
+  });
+}
