@@ -1,0 +1,156 @@
+{
+ "source": "https://raw.githubusercontent.com/unknown8575/saferaah/d652712ab122554448155fbbc342366839d1f364/web/public/",
+ "note": "Map and place data for Delhi NCT, built by pipeline/ from OpenStreetMap (ODbL). Kept out of git so the repository stays small; fetched and checksum-verified at build time.",
+ "files": [
+  {
+   "path": "data/air.bin",
+   "sha256": "6d16ffc335fb505d482e92e49f31ab3513fc7eb8c3163f829d737571de9d3c6c",
+   "bytes": 2665276
+  },
+  {
+   "path": "data/graph.bin",
+   "sha256": "ca4133dd4c1f559461810a79c43b43930d15b96aea65dd7ce3d75299b1eb508e",
+   "bytes": 25571010
+  },
+  {
+   "path": "data/places.json",
+   "sha256": "9709ac0d188180fcf63f71b318dbc0ff700e95915607ae89efeb73f0e355849f",
+   "bytes": 1192081
+  },
+  {
+   "path": "data/pois.json",
+   "sha256": "6979d3436c8d1e734dd3f93b02f25f696ff4b482015031f5dc721cb0c59cbeba",
+   "bytes": 1557455
+  },
+  {
+   "path": "data/search.json",
+   "sha256": "7992d575b68dd7b097a6d9c4c97b77d36992626ad89020357c6b434352db833c",
+   "bytes": 1661511
+  },
+  {
+   "path": "data/tiles/11_1461_852.bin",
+   "sha256": "cd67018e84cc3ca79bea787008a1e4648ce466ac0fa4e0dc81af1ab2471628e7",
+   "bytes": 306924
+  },
+  {
+   "path": "data/tiles/11_1461_853.bin",
+   "sha256": "e79e649d718a4263d73e9ddaf44af7ec12ff5194a1285996bdb8af892f928ee4",
+   "bytes": 577913
+  },
+  {
+   "path": "data/tiles/11_1461_854.bin",
+   "sha256": "a0220ad55b7e5b252baa782276335a3ff85d698b7b38a74bc2481e9048c64906",
+   "bytes": 619668
+  },
+  {
+   "path": "data/tiles/11_1461_855.bin",
+   "sha256": "a9224c07e760b2ff2bcf549555987585dd4287141f475fd7ddbf9e99d6c0d912",
+   "bytes": 627521
+  },
+  {
+   "path": "data/tiles/11_1462_852.bin",
+   "sha256": "c7acc70ee07ec9730009d12f667b6486605c01767ddf7a3eb32b6032fb748f1d",
+   "bytes": 730084
+  },
+  {
+   "path": "data/tiles/11_1462_853.bin",
+   "sha256": "95e04ccb75a0dcbe1b8be4b3e408909d2017200be4553290bb638d8ad9f6dfc0",
+   "bytes": 3633295
+  },
+  {
+   "path": "data/tiles/11_1462_854.bin",
+   "sha256": "718a9224a8ff0cf77f022737136cd4aea961f25bfc4e899ff1e5f81da18adff5",
+   "bytes": 4070315
+  },
+  {
+   "path": "data/tiles/11_1462_855.bin",
+   "sha256": "9f625fc19532a6ce1ac1897fb4a9728cf86460f51805e95d98480e9a827786a3",
+   "bytes": 1730753
+  },
+  {
+   "path": "data/tiles/11_1463_852.bin",
+   "sha256": "7cbdd9f887b665bfbb062c9722b6e7d8fc591aea0b35148a378499693f5efa9b",
+   "bytes": 107683
+  },
+  {
+   "path": "data/tiles/11_1463_853.bin",
+   "sha256": "658a47534aa33fd44ebb1b46be33805ee467740a2111e95fc616d1243ffc4081",
+   "bytes": 3684743
+  },
+  {
+   "path": "data/tiles/11_1463_854.bin",
+   "sha256": "b37b376af78913942d05b9fe6aec770a82aca4eda3cd4c7100f4cb9160744e85",
+   "bytes": 4151291
+  },
+  {
+   "path": "data/tiles/11_1463_855.bin",
+   "sha256": "731286ac1529603e0f7b62b5bc67c519e8344cd05b5e405d4cfc2bdf790a7aee",
+   "bytes": 983474
+  },
+  {
+   "path": "data/tiles/11_1464_852.bin",
+   "sha256": "4a94b8e74b753c092c11aa4219cb3b65fb2d2cc40b84ef35517e87bb52be915d",
+   "bytes": 60
+  },
+  {
+   "path": "data/tiles/11_1464_853.bin",
+   "sha256": "6520a60d16464d50d5d099dac71e1ef4942ebdc5eeed656fd777e0f95d0d6939",
+   "bytes": 5268
+  },
+  {
+   "path": "data/tiles/11_1464_854.bin",
+   "sha256": "f1587a5948177f60842baacfd441b14020633c4a955cc36ab8f532aedffb38f9",
+   "bytes": 43257
+  },
+  {
+   "path": "data/tiles/11_1464_855.bin",
+   "sha256": "6dfd8907d4fadebf1555ef05b962046f054b21b02f993a5bfde3a57021a65888",
+   "bytes": 123982
+  },
+  {
+   "path": "data/tiles/index.json",
+   "sha256": "e8fec570d6fe7f3ffcd86da30185dbc479147dde3c4eb2f10218da5d4a93bb51",
+   "bytes": 578
+  },
+  {
+   "path": "data/tiles/low.bin",
+   "sha256": "5e6fd1939c05d70f9689d9420a20fcd3326a20e98ded0e5e0e4de89890d79725",
+   "bytes": 434653
+  },
+  {
+   "path": "data/version.json",
+   "sha256": "b4b09f365e6670f201d39e104dbfcbeee048a86059e7713e3ec1fc70d3d23e1a",
+   "bytes": 264
+  },
+  {
+   "path": "help/checkin.gif",
+   "sha256": "5ed444fc5742b13fc6d58863043e9128d82cb340cd1c3e074e729ad60c6bf00b",
+   "bytes": 342426
+  },
+  {
+   "path": "help/journey.gif",
+   "sha256": "82d6ed9cd6b2f2fb64510e2d22513ab34ff41d245b075a5e88b4c52cf1a1da0d",
+   "bytes": 643777
+  },
+  {
+   "path": "help/plan.gif",
+   "sha256": "f595e13502d2cac0ac0477ee5409c811c40fc512940e6ddf41d84b911adae84d",
+   "bytes": 413460
+  },
+  {
+   "path": "help/review.gif",
+   "sha256": "a85ed013629544487f8f2f23be48e79993b01c45edc5312a419fbd74e14b2d26",
+   "bytes": 340022
+  },
+  {
+   "path": "help/routes.gif",
+   "sha256": "c81ae56ac1cff7eeb7c3f86cf0fdba86d04cc3d18e9c7dc378a0ce7a32655675",
+   "bytes": 235238
+  },
+  {
+   "path": "help/sos.gif",
+   "sha256": "fb5a55657ba2e6ed67d5cc62a0165d4d905ae5ffc14e35bc777ce56cc36b18bb",
+   "bytes": 388469
+  }
+ ]
+}

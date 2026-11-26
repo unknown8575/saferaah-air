@@ -1,0 +1,12 @@
+node_modules
+web/dist
+android
+ios
+data
+docs
+tests
+.git
+*.log
+web/public/data
+web/public/help
+coverage
