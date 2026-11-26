@@ -122,11 +122,18 @@ self.onmessage = async (ev: MessageEvent) => {
     }
     if (m.type === 'route') {
       const res = routeOnce(m.from, m.to, m.mode, m.when, m.profile, m.pm25 ?? null);
-      let vehicleAlt: { mode: Mode; timeS: number; tier: RouteResult['tier'] } | undefined;
+      let vehicleAlt: { mode: Mode; timeS: number; tier: RouteResult['tier']; fastestS?: number } | undefined;
       if (m.mode === 'walk' && res.routes.length) {
         const alt = routeOnce(m.from, m.to, 'auto', m.when, m.profile);
         const best = alt.routes.reduce<RouteResult | null>((a, b) => (!a || b.meanRisk < a.meanRisk ? b : a), null);
-        if (best) vehicleAlt = { mode: 'auto', timeS: best.timeS, tier: best.tier };
+        // the mode tab shows the fastest auto time; the advice names the safest auto route, so give both
+        if (best)
+          vehicleAlt = {
+            mode: 'auto',
+            timeS: best.timeS,
+            tier: best.tier,
+            fastestS: Math.min(...alt.routes.map((r) => r.timeS)),
+          };
       }
       const risk = riskFor(m.when, m.profile);
       const routes: WorkerRoute[] = res.routes.map((r) => ({

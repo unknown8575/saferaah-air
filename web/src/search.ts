@@ -8,13 +8,42 @@ export interface Hit {
   score: number;
 }
 
+// words people use interchangeably: "Okhla Industrial Estate Ph-I" = "okhla industrial area phase 1"
+const SYN: Record<string, string> = {
+  estate: 'area',
+  ph: 'phase',
+  i: '1',
+  ii: '2',
+  iii: '3',
+  iv: '4',
+  v: '5',
+  indl: 'industrial',
+  mkt: 'market',
+  stn: 'station',
+};
 const norm = (s: string) =>
   s
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[^\p{L}\p{N} ]+/gu, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .split(' ')
+    .map((w) => SYN[w] ?? w)
+    .join(' ');
+
+/** Air-quality hotspots that OpenStreetMap names only by their phases or not at all: [name, existing entry to copy]. */
+const ALIASES: [string, string][] = [
+  ['CP (Connaught Place)', 'Connaught Place'],
+  ['Okhla Industrial Area', 'Okhla Phase - I'],
+  ['Okhla Industrial Area Phase 2', 'Okhla Phase II'],
+  ['Okhla Industrial Area Phase 3', 'Okhla Phase III'],
+  ['Bawana Industrial Area', 'Bawana'],
+  ['Narela Industrial Area', 'Narela'],
+  ['Patparganj Industrial Area', 'Patparganj'],
+  ['Anand Vihar ISBT', 'Anand Vihar Terminal'],
+  ['Mohan Cooperative Industrial Area', 'Mohan Cooperative Industrial Estate Ltd'],
+];
 
 const TYPE_BOOST: Record<string, number> = {
   station: 0.6,
@@ -29,6 +58,7 @@ const TYPE_BOOST: Record<string, number> = {
   park: 0.3,
   school: 0.25,
   locality: 0.35,
+  industrial: 0.55,
   hotel: 0.1,
   street: 0.05,
 };
@@ -49,6 +79,7 @@ export const TYPE_ICON: Record<string, string> = {
   govt: '🏛️',
   liquor: '🍺',
   landmark: '🏛️',
+  industrial: '🏭',
   park: '🌳',
   market: '🛍️',
   school: '🏫',
@@ -60,7 +91,14 @@ export const TYPE_ICON: Record<string, string> = {
 export class PlaceSearch {
   private items: { e: Entry; n: string; words: string[] }[];
   constructor(entries: Entry[]) {
-    this.items = entries.map((e) => {
+    const byName = new Map<string, Entry>();
+    for (const e of entries) if (!byName.has(e[0])) byName.set(e[0], e);
+    const extra: Entry[] = [];
+    for (const [name, target] of ALIASES) {
+      const t = byName.get(target);
+      if (t && !byName.has(name)) extra.push([name, t[1], t[2], /Industrial/.test(name) ? 'industrial' : t[3]]);
+    }
+    this.items = [...entries, ...extra].map((e) => {
       const n = norm(e[0]);
       return { e, n, words: n.split(' ') };
     });

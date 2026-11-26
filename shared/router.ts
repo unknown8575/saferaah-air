@@ -496,7 +496,8 @@ export class Router {
       alts.push(d);
     }
     // An alternative that turns out clearly safer joins the fastest→safest front.
-    const ranked = front([...swept, ...alts]);
+    // near-identical twins (same streets, same time) would show as two cards with one meaning
+    const ranked = this.dedupe(front([...swept, ...alts]));
     const others = [...swept, ...alts]
       .filter(
         (r) =>
@@ -511,6 +512,8 @@ export class Router {
     fastest.labels.push('Fastest');
     if (safest !== fastest) safest.labels.push('Safest');
     else fastest.labels.push('Also safest');
+    // routes on the front between fastest and safest trade a little time for a little safety
+    for (const r of ranked) if (!r.labels.length) r.labels.push('Balanced');
     for (const r of others) r.labels.push('Alternative');
     const routes = [...ranked, ...others];
     if (req.air) this.addCleanAir(routes, req, s, t, times, risk, usable, fastestT);
@@ -572,6 +575,21 @@ export class Router {
     const cleanest = routes.reduce((a, b) => (b.air!.doseUg < a.air!.doseUg ? b : a));
     if (cleanest !== fastest && cleanest.air!.pctVsFastest >= 3) cleanest.labels.push('Cleanest air');
     else fastest.labels.push('Also cleanest');
+  }
+
+  /** Drop a route that shares >90% of its road and is within 2% of the time of one already kept. */
+  private dedupe(list: RouteResult[]): RouteResult[] {
+    const kept: RouteResult[] = [];
+    for (const r of list) {
+      if (
+        !kept.some(
+          (k) =>
+            Math.abs(k.timeS - r.timeS) <= Math.max(k.timeS, r.timeS) * 0.02 && this.overlap(k.edges, r.edges) > 0.9,
+        )
+      )
+        kept.push(r);
+    }
+    return kept;
   }
 
   private overlap(a: number[], b: number[]): number {

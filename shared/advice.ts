@@ -31,7 +31,7 @@ export function adviseTrip(opts: {
   when: Date;
   routes: RouteResult[];
   /** fastest time for an auto/cab over the same trip, if computed */
-  vehicleAltS?: { mode: Mode; timeS: number; tier: Tier };
+  vehicleAltS?: { mode: Mode; timeS: number; tier: Tier; fastestS?: number };
 }): Advice | null {
   const { mode, profile, when, routes, vehicleAltS } = opts;
   if (!routes.length) return null;
@@ -43,12 +43,17 @@ export function adviseTrip(opts: {
 
   if (mode === 'walk' && bestRank >= 2 && best.lengthM > 700 && vehicleAltS && RANK[vehicleAltS.tier] <= bestRank) {
     const mins = Math.max(1, Math.round(vehicleAltS.timeS / 60));
+    const fastMins = vehicleAltS.fastestS != null ? Math.max(1, Math.round(vehicleAltS.fastestS / 60)) : mins;
+    const took =
+      fastMins < mins
+        ? `the safest route takes about ${mins} min (fastest ${fastMins} min)`
+        : `it takes about ${mins} min`;
     return {
       level: 'warn',
       title: `Walking ${who}is risky on every route right now`,
       body:
         `It is ${clock} and even the safest walk (${km} km) passes quiet, closed stretches. ` +
-        `${MODE_INFO[vehicleAltS.mode].label} takes about ${mins} min — consider it, and share your trip.`,
+        `By ${MODE_INFO[vehicleAltS.mode].label.toLowerCase()}, ${took} — consider it, and share your trip.`,
       suggestMode: vehicleAltS.mode,
     };
   }
