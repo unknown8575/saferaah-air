@@ -224,8 +224,34 @@ export const hooks = {
   openDirections: () => {},
   showContacts: () => {},
   drawMe: () => {},
+  planRoutes: (_opts?: { quiet?: boolean }): Promise<void> | void => {},
+  renderHome: () => {},
+  startPick: (_target: 'from' | 'to' | 'me') => {},
+  askSaans: (_ask?: string): Promise<void> | void => {},
+  showCategory: (_key: string): Promise<void> | void => {},
+  renderDirectionsTop: () => {},
+  renderRoutes: () => {},
+  showDetails: () => {},
+  showPlace: (_p: Place, _fly: boolean): Promise<void> | void => {},
+  selectRoute: (_i: number, _fromMap?: boolean) => {},
+  renderSearchTop: () => {},
 };
 export const wide = () => window.innerWidth >= 860;
+
+export function mapPad() {
+  const th = top.getBoundingClientRect().height,
+    sh = sheet.getBoundingClientRect().height;
+  return wide()
+    ? { top: 40, bottom: 40, left: 440, right: 80 }
+    : { top: th + 10, bottom: Math.min(sh, window.innerHeight * 0.6) + 10, left: 10, right: 10 };
+}
+export function fitPad() {
+  const th = top.getBoundingClientRect().height;
+  const sh = Math.max(sheet.getBoundingClientRect().height, window.innerHeight * 0.38);
+  return wide()
+    ? { top: 70, bottom: 60, left: 450, right: 90 }
+    : { top: th + 30, bottom: Math.min(sh, window.innerHeight * 0.52) + 20, left: 36, right: 76 };
+}
 
 let enterTimer: ReturnType<typeof setTimeout>;
 export function setView(v: View) {
@@ -240,7 +266,8 @@ export function setView(v: View) {
     enterTimer = setTimeout(() => sheet.classList.remove('enter'), 650);
   }
   crosshair.hidden = v !== 'pick';
-  sosBtn.hidden = v === 'track';
+  // SOS floats on screen during a trip; otherwise it is in the menu
+  sosBtn.hidden = v !== 'journey';
   smap?.dimSafety(['directions', 'details', 'journey'].includes(v));
   hooks.renderFabs();
 }

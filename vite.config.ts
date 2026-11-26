@@ -1,4 +1,6 @@
 import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 
 /**
  * Adds a Content-Security-Policy <meta> tag, so the page is protected even on static hosts
@@ -33,14 +35,50 @@ function csp(apiBase: string): Plugin {
   };
 }
 
+/** Stamps the service worker with the build and data versions, so old caches are replaced and cleaned up. */
+function swVersion(): Plugin {
+  return {
+    name: 'saferaah-sw-version',
+    apply: 'build',
+    closeBundle() {
+      const assets = readdirSync('web/dist/assets').sort().join(',');
+      const build = createHash('sha1').update(assets).digest('hex').slice(0, 10);
+      const data = createHash('sha1').update(readFileSync('data-manifest.json')).digest('hex').slice(0, 10);
+      const p = 'web/dist/sw.js';
+      writeFileSync(p, readFileSync(p, 'utf8').replace('__BUILD__', build).replace('__DATA__', data));
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   return {
     root: 'web',
     base: './',
     publicDir: 'public',
-    plugins: [csp(env.VITE_API_BASE ?? process.env.VITE_API_BASE ?? '')],
-    build: { outDir: 'dist', emptyOutDir: true, target: 'es2022', chunkSizeWarningLimit: 1500 },
+    plugins: [csp(env.VITE_API_BASE ?? process.env.VITE_API_BASE ?? ''), swVersion()],
+    build: {
+      outDir: 'dist',
+      emptyOutDir: true,
+      target: 'es2022',
+      // the largest chunk is MapLibre itself (1.08 MB minified, 292 KB gzipped); the app's own code is ~150 KB
+      chunkSizeWarningLimit: 1100,
+      // MapLibre (the map engine) is most of the bundle and changes rarely: its own chunk stays
+      // cached across app updates
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              { name: 'maplibre', test: /node_modules[\\/]maplibre-gl/ },
+              { name: 'lucide', test: /node_modules[\\/]lucide/ },
+              { name: 'capacitor', test: /node_modules[\\/]@capacitor/ },
+              { name: 'opening-hours', test: /node_modules[\\/]opening_hours/ },
+              { name: 'vendor', test: /node_modules/ },
+            ],
+          },
+        },
+      },
+    },
     worker: { format: 'es' },
     server: { proxy: { '/api': 'http://localhost:8787' } },
   };

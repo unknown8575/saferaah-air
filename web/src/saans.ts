@@ -649,9 +649,8 @@ async function ask(env: SaansEnv, raw: string, msgs: HTMLElement) {
   chat.push(ans);
   if (!root) return;
   renderMsgs(msgs, env);
-  msgs
-    .querySelectorAll('.msg.bot')
-    [msgs.querySelectorAll('.msg.bot').length - 1]?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  const bots = msgs.querySelectorAll('.msg.bot');
+  bots[bots.length - 1]?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 /** Tests and "erase my data" clear the conversation. */

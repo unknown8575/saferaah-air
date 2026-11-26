@@ -62,7 +62,11 @@ def interp(coords, step_m):
 def tc90(b, base):
     ctx = b.new_context(**PHONE); page = ctx.new_page()
     page.goto(base + '/'); page.wait_for_selector('.intro', timeout=20000)
-    page.get_by_role('button', name='Add a trusted contact').click()
+    expect(page.locator('.intro h2')).to_contain_text('smog')
+    page.locator('#intro-air').click()
+    # trusted contacts live in the menu (family safety), not on the first screen
+    page.locator('#menu').click()
+    page.get_by_role('button', name='Trusted contacts & settings').click()
     page.get_by_label('Contact name').fill('Maa')
     page.get_by_label('Contact mobile number').fill('12345')
     page.locator('#add-contact').click()
@@ -74,12 +78,12 @@ def tc90(b, base):
     expect(page.locator('.contacts li')).to_have_count(2)
     expect(page.locator('.contacts')).to_contain_text('+919876543210')
     page.reload(); page.wait_for_timeout(2500)
-    stored = page.evaluate("() => JSON.parse(localStorage.getItem('saferaah.v1')).contacts.length")
+    stored = page.evaluate("() => JSON.parse(localStorage.getItem('saferaah-air.v1')).contacts.length")
     assert stored == 2, stored
     ctx.close()
 
 
-SEEN = "localStorage.setItem('saferaah.v1', JSON.stringify({seenIntro:true}))"
+SEEN = "localStorage.setItem('saferaah-air.v1', JSON.stringify({seenIntro:true}))"
 DENY_GPS = "navigator.geolocation.watchPosition = (ok, err) => { setTimeout(() => err({ code: 1, message: 'denied' }), 50); return 1; }; navigator.geolocation.clearWatch = () => {};"
 
 
@@ -110,7 +114,7 @@ def tc91(b, base):
 @case('TC-92', 'night trip: night theme, advice, fastest and safest labels')
 def tc92(b, base):
     ctx = b.new_context(**PHONE); page = ctx.new_page()
-    page.goto(base + q(LAJ, GIRI, t='21:30', mode='walk', demo=1)); wait_routes(page)
+    page.goto(base + q(LAJ, GIRI, t='21:30', mode='walk', who='woman', demo=1)); wait_routes(page)
     assert page.evaluate('document.documentElement.dataset.theme') == 'night'
     expect(page.locator('.advice')).to_be_visible()
     expect(page.locator('.lbl-fastest')).to_have_count(1)
@@ -122,7 +126,7 @@ def tc92(b, base):
 @case('TC-93', 'route details explain the score and list contacts and directions')
 def tc93(b, base):
     ctx = b.new_context(**PHONE); page = ctx.new_page()
-    page.add_init_script("localStorage.setItem('saferaah.v1', JSON.stringify({seenIntro:true, contacts:[{id:'1',name:'Maa',phone:'+919876543210',notify:true}]}))")
+    page.add_init_script("localStorage.setItem('saferaah-air.v1', JSON.stringify({seenIntro:true, contacts:[{id:'1',name:'Maa',phone:'+919876543210',notify:true}]}))")
     page.goto(base + q(LAJ, GIRI, t='21:30', mode='walk', demo=1)); wait_routes(page)
     page.locator('.route-card.sel').click()
     expect(page.locator('.prec-box .prec-head')).to_be_visible()
@@ -138,7 +142,7 @@ def tc93(b, base):
 def tc94(b, base):
     ctx = b.new_context(**PHONE, permissions=['geolocation'], geolocation={'latitude': CP[1], 'longitude': CP[0], 'accuracy': 8})
     page = ctx.new_page()
-    page.add_init_script("localStorage.setItem('saferaah.v1', JSON.stringify({seenIntro:true, travellerName:'Riya', contacts:[{id:'1',name:'Maa',phone:'+919876543210',notify:true}]}))")
+    page.add_init_script("localStorage.setItem('saferaah-air.v1', JSON.stringify({seenIntro:true, travellerName:'Riya', contacts:[{id:'1',name:'Maa',phone:'+919876543210',notify:true}]}))")
     # short car trip around Connaught Place
     page.goto(base + q(CP, (77.2245, 28.6290), mode='car', toName='Barakhamba Road')); wait_routes(page)
     page.locator('#start').click()
@@ -194,7 +198,7 @@ def tc97(b, base, static_base):
 @case('TC-98', 'a point outside the covered area is explained')
 def tc98(b, base):
     ctx = b.new_context(**PHONE); page = ctx.new_page()
-    page.add_init_script("localStorage.setItem('saferaah.v1', JSON.stringify({seenIntro:true}))")
+    page.add_init_script("localStorage.setItem('saferaah-air.v1', JSON.stringify({seenIntro:true}))")
     page.goto(base + '/'); page.wait_for_selector('#q', timeout=20000); page.wait_for_timeout(2500)
     # pick a visible spot above the sheet, east of the covered area
     lon = page.evaluate("""() => { const m = window.__sr.map; m.jumpTo({center:[77.405, 28.60], zoom: 14}); return m.unproject([195, 220]).lng; }""")
@@ -209,6 +213,7 @@ def tc98(b, base):
 def tc99(b, base):
     ctx = b.new_context(**PHONE); page = ctx.new_page()
     page.goto(base + '/?demo=1&t=13:00'); page.wait_for_selector('#q', timeout=20000); page.wait_for_timeout(1500)
+    page.locator('#menu').click()
     page.get_by_role('button', name='Safe places near me').click()
     page.wait_for_selector('.places li .open-pill', timeout=15000)
     assert page.locator('.places li').count() >= 5
@@ -255,12 +260,18 @@ def tc101(b, base):
 @case('TC-102', 'after one visit the app opens and plans routes with no network (offline PWA)')
 def tc102(b, base):
     ctx = b.new_context(**PHONE); page = ctx.new_page()
-    page.add_init_script("localStorage.setItem('saferaah.v1', JSON.stringify({seenIntro:true}))")
+    page.add_init_script("localStorage.setItem('saferaah-air.v1', JSON.stringify({seenIntro:true}))")
     page.goto(base + '/'); page.wait_for_selector('#q', timeout=20000)
     page.wait_for_function('() => navigator.serviceWorker && navigator.serviceWorker.controller !== undefined', timeout=20000)
-    page.wait_for_timeout(9000)  # app caches its bundles a few seconds after start
-    cached = page.evaluate("async () => (await (await caches.open('saferaah-v1')).keys()).length")
-    assert cached >= 10, cached
+    # the app hands its files to the service worker a few seconds after start; wait until the road graph is in
+    page.wait_for_function("""async () => {
+      let n = 0, graph = false;
+      for (const k of await caches.keys()) if (k.startsWith('saferaah-air-')) {
+        const c = await caches.open(k); n += (await c.keys()).length;
+        if (await c.match(location.origin + '/data/graph.bin')) graph = true;
+      }
+      return graph && n >= 10;
+    }""", timeout=60000, polling=1000)
     ctx.set_offline(True)
     page.goto(base + q(CP, IG, mode='walk', simulate=1)); wait_routes(page, timeout=40000)
     assert page.locator('.route-card').count() >= 1
@@ -381,7 +392,7 @@ def tc107(b, base):
     page.locator('#layers-btn').click()
     page.locator('input[data-layer=safety]').uncheck()
     assert page.evaluate("() => window.__sr.map.getLayoutProperty('safety', 'visibility')") == 'none'
-    assert page.evaluate("() => JSON.parse(localStorage.getItem('saferaah.v1')).layers.safety") is False
+    assert page.evaluate("() => JSON.parse(localStorage.getItem('saferaah-air.v1')).layers.safety") is False
     ctx.close()
 
 
@@ -428,7 +439,7 @@ def tc109(b, base):
     page.locator('#island').click()
     expect(page.locator('#island .isl-more')).to_contain_text('Arrive')
     page.locator('#voice-toggle').click()
-    assert page.evaluate('() => JSON.parse(localStorage.getItem("saferaah.v1")).voice') is False
+    assert page.evaluate('() => JSON.parse(localStorage.getItem("saferaah-air.v1")).voice') is False
     n = page.evaluate('() => window.__spoken.length')
     page.wait_for_timeout(15000)
     assert page.evaluate('() => window.__spoken.length') == n, 'spoke while muted'
@@ -501,7 +512,7 @@ def tc146(b, base):
     expect(page.locator('#family-edit')).to_contain_text('1 child')
     expect(page.locator('#family-edit')).to_contain_text('asthma')
     expect(page.locator('.saans-plan')).to_contain_text('kg less CO₂')
-    fam = page.evaluate("JSON.parse(localStorage.getItem('saferaah.v1')).family")
+    fam = page.evaluate("JSON.parse(localStorage.getItem('saferaah-air.v1')).family")
     assert fam['children'] == 1 and fam['asthma'] is True and fam['commute']['mode'] == 'car', fam
     ctx.close()
 
@@ -575,7 +586,7 @@ def tc149(b, base):
 def tc149b(b, base):
     ctx = b.new_context(**PHONE)
     fake_air(ctx)
-    page = ctx.new_page(); page.add_init_script("localStorage.setItem('saferaah.v1', JSON.stringify({seenIntro:true, layers:{safety:false, reports:true, pois:true, traffic:false, air:true}}))")
+    page = ctx.new_page(); page.add_init_script("localStorage.setItem('saferaah-air.v1', JSON.stringify({seenIntro:true, layers:{safety:false, reports:true, pois:true, traffic:false, air:true}}))")
     page.goto(base + q((77.1300, 28.6350), (77.0850, 28.6250), mode='auto', t='10:00'))
     wait_routes(page)
     page.evaluate("window.__sr.map.jumpTo({center:[77.13,28.635], zoom:15})")
@@ -651,7 +662,7 @@ def main():
     only = set(sys.argv[1:])
     try:
         with sync_playwright() as p:
-            b = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=GL)
+            b = p.chromium.launch(executable_path=os.environ.get('CHROME', '/usr/bin/google-chrome'), args=GL)
             for fn, extra in [(tc90, ()), (tc91, ()), (tc92, ()), (tc93, ()), (tc94, ()), (tc96, ()), (tc97, (static_base,)),
                               (tc98, ()), (tc99, ()), (tc100, ()), (tc101, ()), (tc102, ()), (tc103, ()), (tc104, ()), (tc105, ()),
                               (tc106, ()), (tc107, ()), (tc108, ()), (tc109, ()), (tc144, ()),

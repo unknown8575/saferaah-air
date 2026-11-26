@@ -108,6 +108,9 @@ import {
   Sprout,
   Activity,
   Mic,
+  Thermometer,
+  Droplets,
+  Route,
   type IconNode,
 } from 'lucide';
 
@@ -209,6 +212,9 @@ const ICONS: Record<string, IconNode> = {
   factory: Factory,
   health: HeartPulse,
   fan: Fan,
+  thermo: Thermometer,
+  drop: Droplets,
+  route: Route,
   mic: Mic,
   send: Send,
   child: Baby,

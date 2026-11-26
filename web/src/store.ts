@@ -27,9 +27,10 @@ export interface Settings {
   familySet: boolean;
 }
 
-const KEY = 'saferaah.v1';
+// own keys, so the older SafeRaah app on the same origin (github.io) never mixes settings with this one
+const KEY = 'saferaah-air.v1';
 const DEFAULTS: Settings = {
-  profile: 'woman',
+  profile: 'general',
   mode: 'walk',
   contacts: [],
   travellerName: '',
@@ -66,10 +67,10 @@ export function save(patch: Partial<Settings>): Settings {
 
 export function deviceId(): string {
   try {
-    let id = localStorage.getItem('saferaah.device');
+    let id = localStorage.getItem('saferaah-air.device');
     if (!id) {
       id = crypto.randomUUID();
-      localStorage.setItem('saferaah.device', id);
+      localStorage.setItem('saferaah-air.device', id);
     }
     return id;
   } catch {
