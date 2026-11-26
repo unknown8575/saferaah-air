@@ -69,7 +69,21 @@ export function openDb(path: string): DatabaseSync {
   const vcols = (db.prepare('PRAGMA table_info(edge_votes)').all() as { name: string }[]).map((c) => c.name);
   if (!vcols.includes('tags')) db.exec("ALTER TABLE edge_votes ADD COLUMN tags TEXT NOT NULL DEFAULT ''");
   if (!cols.has('ended_at')) db.exec('ALTER TABLE journeys ADD COLUMN ended_at INTEGER');
+  // small persistent counters (daily AI cap, SMS per trip) that must survive a restart
+  db.exec('CREATE TABLE IF NOT EXISTS counters (key TEXT PRIMARY KEY, n INTEGER NOT NULL, day TEXT NOT NULL)');
   // older versions kept reviews with comments linked to trips; nothing like that is kept now
   db.exec('DROP TABLE IF EXISTS reviews');
   return db;
+}
+
+/** Add one to a counter and return the new value. Counters start again from 0 on a new UTC day. */
+export function bump(db: DatabaseSync, key: string, day: string): number {
+  const r = db
+    .prepare(
+      `INSERT INTO counters (key, n, day) VALUES (?, 1, ?)
+    ON CONFLICT(key) DO UPDATE SET n = CASE WHEN day = excluded.day THEN n + 1 ELSE 1 END, day = excluded.day
+    RETURNING n`,
+    )
+    .get(key, day) as { n: number };
+  return r.n;
 }

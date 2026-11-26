@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { createApp, cleanFamily, cleanAir } from '../../server/app.ts';
 import { openDb } from '../../server/db.ts';
-import { Ai, type Fetch } from '../../server/ai.ts';
+import { Ai, thinkingFor, type Fetch } from '../../server/ai.ts';
 import { NOTES } from '../../shared/saans/knowledge.ts';
 
 // A fake network: Open-Meteo, Google Air Quality and Gemini, recording every call.
@@ -282,9 +282,13 @@ describe('Saans API', () => {
       }
       if (url.includes('gemini-3.8-flash:generateContent'))
         return json({ error: { message: 'Access requires an eligible paid billing account' } }, 403);
-      if (url.includes('gemini-flash-latest:generateContent')) return json({ error: { message: 'not found' } }, 404);
+      if (url.includes('gemini-3.5-flash:generateContent')) return json({ error: { message: 'not found' } }, 404);
       if (url.includes(':generateContent')) {
         expect(init.headers.authorization).toBe('Bearer tok-1');
+        const cfg = JSON.parse(init.body).generationConfig;
+        // short answers, low thinking: Saans should reply in a couple of seconds
+        expect(cfg.maxOutputTokens).toBeLessThanOrEqual(800);
+        expect(cfg.thinkingConfig).toEqual({ thinkingLevel: 'low' });
         return json({
           candidates: [
             { content: { parts: [{ text: 'thinking…', thought: true }, { text: 'Use a 180 m³/h purifier [1].' }] } },
@@ -298,7 +302,7 @@ describe('Saans API', () => {
     const a = await ai.answer('Which purifier?', { air: null, family: cleanFamily({}), route: null });
     expect(a.engine).toBe('gemini');
     expect(a.text).toBe('Use a 180 m³/h purifier [1].');
-    expect(a.model).toBe('gemini-3.5-flash');
+    expect(a.model).toBe('gemini-3.5-flash-lite');
     expect(seen.find((u) => u.includes(':generateContent'))).toBe(
       'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global/publishers/google/models/gemini-3.8-flash:generateContent',
     );
@@ -312,7 +316,7 @@ describe('Saans API', () => {
     // the working model is remembered: the next answer goes straight to it
     seen.length = 0;
     await ai.answer('mask?', { air: null, family: cleanFamily({}), route: null });
-    expect(seen.find((u) => u.includes(':generateContent'))).toContain('gemini-3.5-flash');
+    expect(seen.find((u) => u.includes(':generateContent'))).toContain('gemini-3.5-flash-lite');
     expect(seen.filter((u) => u.includes('/token'))).toHaveLength(0); // token cached
   });
   it('TC-198 behind Cloud Run, the per-network limit uses the address Google appends, not a forged one', async () => {
@@ -355,5 +359,28 @@ describe('Saans API', () => {
     expect(n).toBeGreaterThan(first); // tried again
     for (let i = 0; i < 260; i++) await ai.air(10 + i / 10, 77);
     expect((ai as unknown as { airCache: Map<string, unknown> }).airCache.size).toBeLessThanOrEqual(200);
+  });
+  it('TC-204 a model that rejects the thinking setting is asked again without it, and remembered', async () => {
+    const bodies: any[] = [];
+    const kf = (async (url: string, init: any) => {
+      const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status });
+      if (url.includes(':generateContent')) {
+        const b = JSON.parse(init.body);
+        bodies.push(b);
+        if (b.generationConfig.thinkingConfig)
+          return json({ error: { message: 'thinking_level is not supported' } }, 400);
+        return json({ candidates: [{ content: { parts: [{ text: 'Keep windows shut tonight.' }] } }] });
+      }
+      return json({}, 404);
+    }) as Fetch;
+    const ai = new Ai({ geminiKey: 'k', model: 'gemini-3.9-flash', fetch: kf });
+    const a = await ai.answer('windows?', { air: null, family: null, route: null });
+    expect(a.engine).toBe('gemini');
+    expect(bodies.map((b) => !!b.generationConfig.thinkingConfig)).toEqual([true, false]);
+    await ai.answer('windows tonight?', { air: null, family: null, route: null });
+    expect(bodies.map((b) => !!b.generationConfig.thinkingConfig)).toEqual([true, false, false]);
+    expect(thinkingFor('gemini-2.5-flash-lite')).toEqual({ thinkingBudget: 0 });
+    expect(thinkingFor('gemini-3.5-flash')).toEqual({ thinkingLevel: 'low' });
+    expect(thinkingFor('gemini-pro-latest')).toBeUndefined();
   });
 });

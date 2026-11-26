@@ -45,6 +45,8 @@ export interface AiConfig {
   project?: string;
   /** most Gemini answers per day for the whole server (then the built-in engine answers) */
   dailyLimit?: number;
+  /** persistent counter: adds one to `name` for `day` and returns the new count (see db.bump) */
+  counter?: (name: string, day: string) => number;
   fetch?: Fetch;
   now?: () => number;
 }
@@ -73,16 +75,28 @@ async function withTimeout<T>(ms: number, f: (signal: AbortSignal) => Promise<T>
   }
 }
 
-/** Model names to try, newest-stable aliases first; the first that answers is kept. */
+/** Model names to try, newest first; the first that answers is kept (GEMINI_MODEL goes in front). */
 const MODEL_CANDIDATES = [
   'gemini-3.8-flash',
-  'gemini-flash-latest',
   'gemini-3.5-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
 ];
+/** Answers are 2–6 short lines; a small cap keeps them short and the reply fast. */
+const MAX_OUTPUT_TOKENS = 700;
+
+/**
+ * Saans answers from facts computed in code, so deep reasoning adds seconds, not accuracy:
+ * Gemini 3 models get the low thinking level, 2.5 Flash models none. Unknown names get no
+ * setting, and a model that rejects the setting (400) is retried once without it.
+ */
+export function thinkingFor(model: string): Record<string, unknown> | undefined {
+  if (/^gemini-[3-9]/.test(model)) return { thinkingLevel: 'low' };
+  if (model.startsWith('gemini-2.5-flash')) return { thinkingBudget: 0 };
+  return undefined;
+}
 const META = 'http://metadata.google.internal/computeMetadata/v1';
 const CACHE_MS = 10 * 60000;
 const CACHE_MAX = 300;
@@ -93,6 +107,8 @@ const BREAKER_MS = 60000;
 export class Ai {
   private f: Fetch;
   private models: string[];
+  /** models that rejected the thinking setting (400), asked without it from then on */
+  private noThinking = new Set<string>();
   private embedModel: string;
   private noteVecs: number[][] | null = null;
   private embedRetryAt = 0;
@@ -129,8 +145,11 @@ export class Ai {
   /** Count one Gemini answer against today's cap; false when the cap is reached. */
   private takeQuota(): boolean {
     const key = new Date(this.now).toISOString().slice(0, 10);
+    const limit = this.cfg.dailyLimit ?? 500;
+    // with a database the count survives restarts and new instances; without one it is in memory
+    if (this.cfg.counter) return this.cfg.counter('gemini', key) <= limit;
     if (this.day.key !== key) this.day = { key, used: 0 };
-    if (this.day.used >= (this.cfg.dailyLimit ?? 500)) return false;
+    if (this.day.used >= limit) return false;
     this.day.used++;
     return true;
   }
@@ -238,18 +257,29 @@ export class Ai {
   }
 
   /** generateContent on the first model that exists; remembers it. */
-  private async generate(body: unknown): Promise<{ j: any; model: string }> {
+  private async generate(
+    body: { generationConfig?: Record<string, unknown> } & Record<string, unknown>,
+  ): Promise<{ j: any; model: string }> {
     let last: unknown;
     const order = this.models.slice(); // the list is re-ordered inside the loop
     for (const m of order) {
+      const think = this.noThinking.has(m) ? undefined : thinkingFor(m);
+      const forModel = (t: Record<string, unknown> | undefined) =>
+        t ? { ...body, generationConfig: { ...body.generationConfig, thinkingConfig: t } } : body;
       try {
         try {
-          return { j: await this.call(m, 'generateContent', body), model: m };
+          return { j: await this.call(m, 'generateContent', forModel(think)), model: m };
         } catch (err) {
+          const st = (err as { status?: number }).status;
+          if (st === 400 && think) {
+            // this model does not take that thinking setting: remember, and ask again without it
+            this.noThinking.add(m);
+            return { j: await this.call(m, 'generateContent', body), model: m };
+          }
           // a new project's per-minute quota is small: wait a moment and try once more
-          if ((err as { status?: number }).status !== 429) throw err;
+          if (st !== 429) throw err;
           await new Promise((r) => setTimeout(r, 1500));
-          return { j: await this.call(m, 'generateContent', body), model: m };
+          return { j: await this.call(m, 'generateContent', forModel(think)), model: m };
         }
       } catch (err) {
         last = err;
@@ -287,8 +317,7 @@ export class Ai {
       const { j, model } = await this.generate({
         systemInstruction: { parts: [{ text: p.system }] },
         contents: p.contents,
-        // room for the model's own thinking as well as the short answer
-        generationConfig: { maxOutputTokens: 2048 },
+        generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0.4 },
         safetySettings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }],
       });
       const text = (j.candidates?.[0]?.content?.parts ?? [])

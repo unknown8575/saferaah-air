@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createApp } from './app.ts';
-import { openDb } from './db.ts';
+import { openDb, bump } from './db.ts';
 import { Ai, aiConfigFromEnv } from './ai.ts';
 
 const port = Number(process.env.PORT ?? 8787);
@@ -20,9 +20,10 @@ try {
 } catch {
   console.warn('graph.bin not found in', staticDir, '— run `npm run build` first');
 }
-const ai = new Ai(aiConfigFromEnv());
-// Cloud Run sets K_SERVICE; there the real client address comes from Google's front end
 const db = openDb(dbPath);
+// the daily Gemini cap is counted in the database, so a restart does not reset it
+const ai = new Ai({ ...aiConfigFromEnv(), counter: (name, day) => bump(db, name, day) });
+// Cloud Run sets K_SERVICE; there the real client address comes from Google's front end
 const server = createApp({
   db,
   staticDir,

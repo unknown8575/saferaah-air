@@ -1,6 +1,6 @@
 // SafeRaah API + static file server (plain node:http, no framework).
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -10,7 +10,8 @@ import { MODES, type Mode } from '../shared/modes.ts';
 import { REPORT_KINDS, isReportKind } from '../shared/live.ts';
 import { haversine } from '../shared/geo.ts';
 import type { LonLat } from '../shared/geo.ts';
-import { sendSms, smsConfigured } from './notify.ts';
+import { sendSms, smsConfigured, normalizeIndianPhone } from './notify.ts';
+import { bump } from './db.ts';
 import { Ai } from './ai.ts';
 import { DEFAULT_FAMILY, TRAVEL_LABEL, type Family, type Travel } from '../shared/saans/plan.ts';
 import { aqiFrom, smogOf, inCoverageArea, type AirNow, type Weather, type WeatherHour } from '../shared/air.ts';
@@ -27,6 +28,18 @@ export interface AppOptions {
   ai?: Ai;
   /** behind a trusted proxy (Cloud Run): take the client address from X-Forwarded-For */
   trustProxy?: boolean;
+}
+
+const SMS_MAX_TO = 5,
+  SMS_MAX_CHARS = 320,
+  SMS_DAILY = 200;
+const SMS_PER_TRIP = { sos: 3, notify: 4 } as const;
+
+/** Compare a secret the client sent with the stored one in constant time. */
+export function sameSecret(given: unknown, stored: unknown): boolean {
+  if (typeof given !== 'string' || typeof stored !== 'string' || !given || !stored) return false;
+  // hashing first makes both sides the same length, so timingSafeEqual never throws
+  return timingSafeEqual(createHash('sha256').update(given).digest(), createHash('sha256').update(stored).digest());
 }
 
 const num = (v: unknown, lo: number, hi: number, d: number) =>
@@ -334,9 +347,35 @@ export function createApp(opts: AppOptions): Server {
   function journeyFor(id: string, token: string): any {
     const j = db.prepare('SELECT * FROM journeys WHERE id = ?').get(id) as any;
     if (!j) throw new HttpError(404, 'Journey not found');
-    if (typeof token !== 'string' || !j.token || token !== j.token) throw new HttpError(403, 'Bad journey token');
+    if (!sameSecret(token, j.token)) throw new HttpError(403, 'Bad journey token');
     return j;
   }
+  /**
+   * Optional server SMS (off unless a provider is configured). It must not become a free SMS
+   * relay: only up to 5 distinct Indian mobile numbers, a short message, a few sends per trip
+   * and a server-wide daily cap, all counted in the database.
+   */
+  async function relaySms(tripId: string, kind: 'sos' | 'notify', b: any): Promise<number> {
+    if (!smsConfigured() || !Array.isArray(b.contacts) || typeof b.message !== 'string') return 0;
+    const to = [
+      ...new Set(
+        b.contacts
+          .map((c: unknown) => normalizeIndianPhone(String(c)))
+          .filter((p: string | null): p is string => !!p && /^\+91[6-9]\d{9}$/.test(p)),
+      ),
+    ].slice(0, SMS_MAX_TO) as string[];
+    if (!to.length) return 0;
+    const day = new Date(now()).toISOString().slice(0, 10);
+    if (bump(db, `sms:${kind}:${tripId}`, 'trip') > SMS_PER_TRIP[kind])
+      throw new HttpError(429, 'Message limit for this trip reached; use the SMS or WhatsApp buttons');
+    let sent = 0;
+    for (const p of to) {
+      if (bump(db, 'sms:day', day) > SMS_DAILY) break;
+      if (await sendSms(p, b.message.slice(0, SMS_MAX_CHARS))) sent++;
+    }
+    return sent;
+  }
+
   /** after a trip ends, no more locations are accepted for it */
   function stillTravelling(j: any) {
     if (j.status !== 'active' && j.status !== 'sos') throw new HttpError(409, 'This trip has ended');
@@ -470,7 +509,9 @@ export function createApp(opts: AppOptions): Server {
         dev,
         token,
         shareId,
-        String(b.graphVersion ?? opts.graphVersion),
+        typeof b.graphVersion === 'string' && /^[\w.-]{1,40}$/.test(b.graphVersion)
+          ? b.graphVersion
+          : opts.graphVersion,
         b.mode,
         JSON.stringify(b.route),
         JSON.stringify(b.edges),
@@ -540,23 +581,16 @@ export function createApp(opts: AppOptions): Server {
     'POST /api/journeys/([\\w-]+)/sos': async (req, m) => {
       const b = await body(req);
       const j = journeyFor(m[1], b.token);
+      rateLimit('s:' + j.id);
       db.prepare(`UPDATE journeys SET status = 'sos' WHERE id = ?`).run(j.id);
-      let sent = 0;
-      if (Array.isArray(b.contacts) && typeof b.message === 'string' && smsConfigured()) {
-        for (const to of b.contacts.slice(0, 5)) if (await sendSms(String(to), b.message.slice(0, 600))) sent++;
-      }
-      return { ok: true, shareId: j.share_id, smsSent: sent };
+      return { ok: true, shareId: j.share_id, smsSent: await relaySms(j.id, 'sos', b) };
     },
 
     'POST /api/journeys/([\\w-]+)/notify': async (req, m) => {
       const b = await body(req);
       const j = journeyFor(m[1], b.token);
       rateLimit('n:' + j.id);
-      let sent = 0;
-      if (Array.isArray(b.contacts) && typeof b.message === 'string' && smsConfigured()) {
-        for (const to of b.contacts.slice(0, 5)) if (await sendSms(String(to), b.message.slice(0, 600))) sent++;
-      }
-      return { ok: true, smsSent: sent };
+      return { ok: true, smsSent: await relaySms(j.id, 'notify', b) };
     },
 
     'POST /api/journeys/([\\w-]+)/route': async (req, m) => {
@@ -670,7 +704,7 @@ export function createApp(opts: AppOptions): Server {
       purge();
       const j = db.prepare('SELECT * FROM journeys WHERE id = ?').get(String(b.journeyId)) as any;
       if (!j) throw new HttpError(404, 'This trip has ended and its data was deleted');
-      if (!j.eligible || !j.review_token || b.reviewToken !== j.review_token)
+      if (!j.eligible || !sameSecret(b.reviewToken, j.review_token))
         throw new HttpError(403, 'This journey is not verified for a review');
       if (j.device !== dev) throw new HttpError(403, 'Only the traveller can review this journey');
       if (j.reviewed) throw new HttpError(409, 'Already reviewed');
@@ -800,7 +834,13 @@ export function createApp(opts: AppOptions): Server {
     const headers: Record<string, string> = {
       'content-type': entry.type,
       vary: 'accept-encoding',
-      'cache-control': p.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+      // hashed bundles never change; map data changes only with a new data manifest (and the
+      // service worker keeps its own versioned copy); pages are always revalidated
+      'cache-control': p.includes('/assets/')
+        ? 'public, max-age=31536000, immutable'
+        : /\/(data|help)\//.test(p)
+          ? 'public, max-age=86400'
+          : 'no-cache',
     };
     // Chrome fails to write very large validated entries to its HTTP cache while the service
     // worker fetches the same file (ERR_CACHE_WRITE_FAILURE); those big files are cached by
@@ -821,10 +861,11 @@ export function createApp(opts: AppOptions): Server {
 
   // The Android/iOS apps load the UI from the device (capacitor://localhost or
   // https://localhost) and call this server, so those origins may use the API.
+  // plain http://localhost (a local dev server) is only trusted when not deployed behind a proxy
   const allowed = new Set([
     'capacitor://localhost',
     'https://localhost',
-    'http://localhost',
+    ...(opts.trustProxy ? [] : ['http://localhost']),
     ...(process.env.ALLOWED_ORIGINS ?? '')
       .split(',')
       .map((s) => s.trim())
