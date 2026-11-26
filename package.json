@@ -32,7 +32,7 @@
     "opening_hours": "^3.15.0"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.6.0",
+    "@capacitor/android": "^8.6.2",
     "@capacitor/cli": "^8.6.0",
     "@capacitor/ios": "^8.6.0",
     "@types/node": "^26.6.6",
