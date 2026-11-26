@@ -3,7 +3,7 @@
 ```bash
 npm run check          # typecheck + lint + unit/API tests
 npm run test:coverage  # with coverage; the run fails below the thresholds
-npm run test:e2e       # 26 browser tests in headless Chrome (Python Playwright)
+npm run test:e2e       # 27 browser tests in headless Chrome (Python Playwright), incl. an axe-core WCAG 2.1 AA audit
 ```
 
 CI (`.github/workflows/ci.yml`) runs typecheck, lint, the unit/API tests with coverage thresholds, and the production build on every push.
@@ -14,7 +14,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, the unit/API tests with co
 |---|---|---|
 | Unit (`tests/unit`) | vitest | Router correctness and labels on the real Delhi graph, risk model, journey verification, live reports, CPCB AQI breakpoints, forecast parsing, street air factors, dose maths, clean-air routing, Saans retrieval / plan / answers / prompt, manifest integrity |
 | API (`tests/api`) | vitest + real HTTP server | Journeys, privacy deletion, reviews, reports, rate limits, `/api/air`, `/api/assistant` with fake Google services (key mode, Vertex mode, model fallback, quotas, circuit breaker, cache), security headers, CSP, path traversal, ETag |
-| End to end (`tests/e2e`) | Playwright, phone 390×844 and desktop | First run, search, directions, night routing, live navigation with mocked GPS, SOS check-in, offline PWA, accessibility names and 360 px layout, live reports, voice guidance, AQI card, Saans chat, family profile, clean-air routes, air reports, nearby places without coordinates leaving the phone, street air layer |
+| End to end (`tests/e2e`) | Playwright, phone 390×844 and desktop | First run, search, directions, night routing, live navigation with mocked GPS, SOS check-in, offline PWA, accessibility names and 360 px layout, live reports, voice guidance, AQI card, Saans chat, family profile, clean-air routes, air reports, nearby places without coordinates leaving the phone, street air layer, **axe-core WCAG 2.1 AA audit** of the main screens in day and night themes (TC-150) |
 
 ## Coverage (shared/ + server/)
 

@@ -588,6 +588,47 @@ def tc149b(b, base):
     ctx.close()
 
 
+AXE_JS = os.path.join(ROOT, 'node_modules', 'axe-core', 'axe.min.js')
+
+
+def axe_violations(page):
+    """WCAG 2.1 A/AA violations reported by axe-core on the current screen."""
+    page.wait_for_timeout(800)  # let entrance animations finish (mid-fade colours are not the real ones)
+    page.add_script_tag(path=AXE_JS)
+    return page.evaluate("""async () => (await axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }))
+      .violations.map(v => `${v.id} (${v.impact}): ${v.nodes.slice(0, 2).map(n => n.target.join(' ')).join(' | ')}`)""")
+
+
+@case('TC-150', 'automated WCAG 2.1 AA audit (axe-core): home, Saans, routes by day and night, details, menu, layers')
+def tc150(b, base):
+    # axe is injected as a script, so this one context relaxes the page's CSP; the app itself is unchanged
+    ctx = b.new_context(**PHONE, bypass_csp=True, permissions=['geolocation'], geolocation={'latitude': CP[1], 'longitude': CP[0], 'accuracy': 10})
+    fake_air(ctx)
+    page = ctx.new_page(); page.add_init_script(SEEN)
+    found = {}
+    page.goto(base + '/')
+    page.wait_for_function("() => /^\\d+$/.test(document.querySelector('#aqi-card .aqi-ring')?.textContent ?? '')", timeout=30000)
+    found['home'] = axe_violations(page)
+    page.click('#aqi-card'); page.wait_for_selector('.saans-hero .hero-num')
+    page.fill('#saans-q', 'Which purifier?'); page.press('#saans-q', 'Enter'); page.wait_for_selector('.msg.bot:not(.typing)')
+    found['saans'] = axe_violations(page)
+    page.keyboard.press('Escape')
+    page.click('#menu'); page.wait_for_selector('#menu-saans'); found['menu'] = axe_violations(page); page.keyboard.press('Escape')
+    # the other theme (the app switches day/night by the chosen time)
+    page.goto(base + '/?t=12:00' if page.evaluate("document.documentElement.dataset.theme") == 'night' else base + '/?t=23:00')
+    page.wait_for_selector('#aqi-card'); page.click('#aqi-card'); page.wait_for_selector('.saans-hero')
+    found['saans other theme'] = axe_violations(page)
+    page.keyboard.press('Escape')
+    for t in ('10:00', '22:30'):
+        page.goto(base + q((77.1300, 28.6350), (77.0850, 28.6250), mode='walk', t=t)); wait_routes(page)
+        found[f'routes {t}'] = axe_violations(page)
+    page.click('#details-btn'); page.wait_for_selector('#ask-route')
+    found['details'] = axe_violations(page)
+    bad = {k: v for k, v in found.items() if v}
+    assert not bad, bad
+    ctx.close()
+
+
 def main():
     port, sport = free_port(), free_port()
     env = dict(os.environ, PORT=str(port), DB_PATH=os.path.join(ROOT, 'data', 'e2e.db'), STATIC_DIR=os.path.join(ROOT, 'web', 'dist'))
@@ -614,7 +655,7 @@ def main():
             for fn, extra in [(tc90, ()), (tc91, ()), (tc92, ()), (tc93, ()), (tc94, ()), (tc96, ()), (tc97, (static_base,)),
                               (tc98, ()), (tc99, ()), (tc100, ()), (tc101, ()), (tc102, ()), (tc103, ()), (tc104, ()), (tc105, ()),
                               (tc106, ()), (tc107, ()), (tc108, ()), (tc109, ()), (tc144, ()),
-                              (tc145, ()), (tc146, ()), (tc147, ()), (tc148, ()), (tc149, ()), (tc149b, ())]:
+                              (tc145, ()), (tc146, ()), (tc147, ()), (tc148, ()), (tc149, ()), (tc149b, ()), (tc150, ())]:
                 if only and not any(o in fn.__name__ for o in only): continue
                 fn(b, base, *extra)
             b.close()

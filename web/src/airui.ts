@@ -14,8 +14,8 @@ export function aqiCard(a: AirNow | null, onOpen: () => void): HTMLElement {
   const B = a ? AQI_BANDS[a.aqi.band] : null;
   return h('button', {
     class: 'aqi-card', id: 'aqi-card', style: B ? { '--band': B.color } : {}, on: { click: onOpen },
-    'aria-label': a && B ? `Air quality ${a.aqi.value}, ${B.label}. Open Saans, the clean-air assistant` : 'Open Saans, the clean-air assistant',
   },
+  h('span', { class: 'sr-only' }, 'Air quality index '),
   h('span', { class: 'aqi-ring' }, a ? String(a.aqi.value) : '–'),
   h('span', { class: 'aqi-txt' },
     h('b', null, a && B ? `${B.label} air` : 'Air quality'),

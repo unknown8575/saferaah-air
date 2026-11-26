@@ -82,11 +82,11 @@ flowchart LR
 | Criterion | Evidence |
 |---|---|
 | **Problem statement alignment** | §2 table; Saans plan / indoor / swaps with impact; clean-air routes; NAQI; nearby clean-air places. `docs/11-clean-air.md` |
-| **Code quality** | Strict TypeScript everywhere; pure domain modules (`shared/`) separate from UI (`web/src/`) and server (`server/`); view modules (`web/src/airui.ts`, `saans.ts`); `oxlint` with correctness = error, **0 findings**; CI on every push. |
-| **Security** | Keys only in server env (never in client or repo — Vertex mode needs no key at all); CSP (header + meta), `nosniff`, `DENY` framing, `no-referrer`, Permissions-Policy, HSTS on Cloud Run; strict input clamping on every API field; prompt-injection guard; path-traversal-safe static server; per-phone and per-network rate limits; daily Gemini cap; checksum-verified data download; no location stored, no questions logged. [`SECURITY.md`](SECURITY.md) |
-| **Efficiency** | Routing runs on the phone in a Web Worker (server CPU does not grow with routing); precomputed per-street air data (2.6 MB binary); answer cache + embedding cache; in-memory gzip + ETag static cache; AQI cached 30 min per ~10 km cell; scale-to-zero Cloud Run. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| **Testing** | **134 unit + API tests** (vitest, ~91 % statements / 80 % branches, enforced thresholds) and **26 end-to-end** browser tests (Playwright, phone and desktop). [`docs/TESTING.md`](docs/TESTING.md) |
-| **Accessibility** | Every control labelled; dialogs with `aria-modal` and focus handling; `aria-live` chat; keyboard and Escape support; radio-group semantics; voice input; spoken turn-by-turn; reduced-motion respected; no horizontal scroll at 360 px (tested); text never relies on colour alone. |
+| **Code quality** | Strict TypeScript everywhere; pure domain modules (`shared/`) separate from UI (`web/src/`) and server (`server/`); UI split into modules — shared app context (`web/src/app.ts`), navigation (`journey.ts`), clean-air views (`airui.ts`), assistant (`saans.ts`); `oxlint` with correctness = error, **0 findings**; CI on every push. |
+| **Security** | Keys only in server env (never in client or repo — Vertex mode needs no key at all); CSP (header + meta), `nosniff`, `DENY` framing, `no-referrer`, Permissions-Policy, HSTS on Cloud Run; strict input clamping on every API field; prompt-injection guard; path-traversal-safe static server; per-phone and per-network rate limits; daily Gemini cap; checksum-verified data download; `npm audit` in CI and Dependabot; no location stored, no questions logged. [`SECURITY.md`](SECURITY.md) |
+| **Efficiency** | Routing runs on the phone in a Web Worker (server CPU does not grow with routing); the assistant is a separate lazy-loaded chunk (34 KB), prefetched after start; precomputed per-street air data (2.6 MB binary); answer cache + embedding cache; in-memory gzip + ETag static cache; AQI cached 30 min per ~10 km cell; scale-to-zero Cloud Run. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
+| **Testing** | **134 unit + API tests** (vitest, ~91 % statements / 80 % branches, enforced thresholds) and **27 end-to-end** browser tests (Playwright, phone and desktop), including an automated **WCAG 2.1 AA audit with axe-core** on every main screen in both themes. [`docs/TESTING.md`](docs/TESTING.md) |
+| **Accessibility** | **axe-core WCAG 2.1 AA audit with zero violations** on home, Saans, routes (day and night), details and menu (TC-150); colour contrast ≥ 4.5:1 for text; every control labelled; dialogs with `aria-modal` and focus handling; `aria-live` chat; keyboard and Escape support; radio-group semantics; voice input; spoken turn-by-turn; reduced-motion respected; no horizontal scroll at 360 px (tested); text never relies on colour alone. |
 
 ## 6. Run it
 
@@ -95,7 +95,7 @@ npm ci
 npm run build        # downloads the pinned map data (checksum-verified), bundles the app
 npm start            # http://localhost:8787  (open /?demo=1 to simulate movement)
 npm run check        # typecheck + lint + unit/API tests
-npm run test:e2e     # 26 browser tests (needs Python Playwright + Chrome)
+npm run test:e2e     # 27 browser tests incl. axe-core WCAG audit (needs Python Playwright + Chrome)
 ```
 
 Gemini is optional. Set **one** of:

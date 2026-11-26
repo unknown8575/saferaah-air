@@ -161,6 +161,7 @@ function calloutPoint(routes: { coords: LonLat[] }[], i: number): LonLat {
 function pinEl(cls: string, label: string): HTMLElement {
   const el = document.createElement('div');
   el.className = 'pin-wrap';
+  el.setAttribute('role', 'img');
   el.setAttribute('aria-label', label);
   const inner = document.createElement('div');
   inner.className = `pin ${cls}`;
@@ -431,6 +432,7 @@ export class SafeMap {
       const el = document.createElement('div');
       el.className = 'me';
       el.innerHTML = '<div class="me-cone"></div><div class="me-dot"></div>';
+      el.setAttribute('role', 'img');
       el.setAttribute('aria-label', 'You are here');
       this.meEl = el;
       this.meM = new maplibregl.Marker({ element: el, rotationAlignment: 'map', pitchAlignment: 'viewport' }).setLngLat(p).addTo(this.map);

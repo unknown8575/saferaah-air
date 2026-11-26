@@ -125,7 +125,7 @@ function heroCard(a: AirNow | null): HTMLElement {
     h('div', { class: 'hero-row' },
       h('div', { class: 'hero-num', 'aria-label': `AQI ${a.aqi.value}` }, String(a.aqi.value)),
       h('div', { class: 'hero-meta' },
-        h('span', { class: 'band-pill' }, B.label),
+        h('span', { class: 'band-pill', 'data-band': a.aqi.band }, B.label),
         h('small', null, `PM2.5 ${Math.round(a.pm25)} µg/m³ · ${(a.pm25 / 15).toFixed(0)}× WHO guideline`))),
     h('p', { class: 'hero-advice' }, B.advice),
     hours.length ? bars : null,

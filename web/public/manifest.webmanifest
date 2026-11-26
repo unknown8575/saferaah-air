@@ -1,7 +1,7 @@
 {
-  "name": "SafeRaah — safe routes",
-  "short_name": "SafeRaah",
-  "description": "Up to four routes from fastest to safest, arrival messages and SOS.",
+  "name": "SafeRaah Air — clean-air and safe routes",
+  "short_name": "SafeRaah Air",
+  "description": "Live AQI, cleanest-air and safest routes in Delhi, and Saans, an air-quality assistant for families.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

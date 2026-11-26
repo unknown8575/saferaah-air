@@ -1,7 +1,7 @@
 {
   "name": "saferaah-air",
   "version": "1.0.0",
-  "description": "SafeRaah Air: an urban air-quality assistant for families in Delhi \u2014 clean-air routes, live AQI and the Gemini-powered Saans assistant",
+  "description": "SafeRaah Air: an urban air-quality assistant for families in Delhi — clean-air routes, live AQI and the Gemini-powered Saans assistant",
   "scripts": {
     "data": "bash pipeline/fetch_delhi.sh",
     "data:fetch": "node scripts/fetch-data.mjs",
@@ -37,6 +37,7 @@
     "@capacitor/ios": "^8.6.0",
     "@types/node": "^26.6.6",
     "@vitest/coverage-v8": "^5.1.0",
+    "axe-core": "^4.14.1",
     "geojson-vt": "^5.0.4",
     "oxlint": "^1.95.0",
     "playwright-core": "^1.65.0",
