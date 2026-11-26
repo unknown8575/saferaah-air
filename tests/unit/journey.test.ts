@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { JourneyMonitor, arrivalRadius, routeCoverage, reviewEligibility, type Fix, type JourneyEvent } from '../../shared/journey.ts';
+import {
+  JourneyMonitor,
+  arrivalRadius,
+  routeCoverage,
+  reviewEligibility,
+  type Fix,
+  type JourneyEvent,
+} from '../../shared/journey.ts';
 import type { LonLat } from '../../shared/geo.ts';
 
 // a straight 1 km walk east along latitude 28.6 (1° lon ≈ 97.6 km here)
@@ -8,7 +15,8 @@ const B: LonLat = [77.2 + 1000 / 97630, 28.6];
 const route: LonLat[] = [A, [77.2 + 500 / 97630, 28.6], B];
 const at = (m: number, offN = 0): LonLat => [77.2 + m / 97630, 28.6 + offN / 111195];
 const T0 = Date.UTC(2026, 10, 6, 16, 0);
-const mk = (segTier?: ('green' | 'red')[]) => new JourneyMonitor({ mode: 'walk', route, dest: B, etaS: 780, startedAt: T0, segTier });
+const mk = (segTier?: ('green' | 'red')[]) =>
+  new JourneyMonitor({ mode: 'walk', route, dest: B, etaS: 780, startedAt: T0, segTier });
 const fix = (p: LonLat, s: number, acc = 5): Fix => ({ lon: p[0], lat: p[1], acc, t: T0 + s * 1000 });
 const types = (evs: JourneyEvent[]) => evs.map((e) => e.type);
 
@@ -43,7 +51,12 @@ describe('off route (FR-13)', () => {
   it('TC-43 three far fixes raise one off_route, then back_on_route', () => {
     const m = mk();
     walk(m, 300);
-    const ev = [...m.feed(fix(at(320, 120), 250)), ...m.feed(fix(at(340, 120), 265)), ...m.feed(fix(at(360, 120), 280)), ...m.feed(fix(at(380, 120), 295))];
+    const ev = [
+      ...m.feed(fix(at(320, 120), 250)),
+      ...m.feed(fix(at(340, 120), 265)),
+      ...m.feed(fix(at(360, 120), 280)),
+      ...m.feed(fix(at(380, 120), 295)),
+    ];
     expect(types(ev).filter((t) => t === 'off_route')).toHaveLength(1);
     expect(types(m.feed(fix(at(400), 310)))).toContain('back_on_route');
   });

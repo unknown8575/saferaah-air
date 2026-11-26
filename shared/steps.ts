@@ -5,7 +5,17 @@ import type { LonLat } from './geo.ts';
 
 export interface Step {
   text: string;
-  turn: 'start' | 'straight' | 'slight_left' | 'left' | 'sharp_left' | 'slight_right' | 'right' | 'sharp_right' | 'uturn' | 'arrive';
+  turn:
+    | 'start'
+    | 'straight'
+    | 'slight_left'
+    | 'left'
+    | 'sharp_left'
+    | 'slight_right'
+    | 'right'
+    | 'sharp_right'
+    | 'uturn'
+    | 'arrive';
   distM: number; // distance to travel on this step
   at: LonLat; // where the step begins
   /** index into route coords where the step begins */
@@ -15,7 +25,9 @@ export interface Step {
 function bearing(a: LonLat, b: LonLat): number {
   const toR = Math.PI / 180;
   const y = Math.sin((b[0] - a[0]) * toR) * Math.cos(b[1] * toR);
-  const x = Math.cos(a[1] * toR) * Math.sin(b[1] * toR) - Math.sin(a[1] * toR) * Math.cos(b[1] * toR) * Math.cos((b[0] - a[0]) * toR);
+  const x =
+    Math.cos(a[1] * toR) * Math.sin(b[1] * toR) -
+    Math.sin(a[1] * toR) * Math.cos(b[1] * toR) * Math.cos((b[0] - a[0]) * toR);
   return (Math.atan2(y, x) * 180) / Math.PI;
 }
 
@@ -33,8 +45,16 @@ export function turnOf(inB: number, outB: number): Step['turn'] {
 }
 
 const TURN_WORDS: Record<Step['turn'], string> = {
-  start: 'Head', straight: 'Continue', slight_left: 'Bear left', left: 'Turn left', sharp_left: 'Turn sharp left',
-  slight_right: 'Bear right', right: 'Turn right', sharp_right: 'Turn sharp right', uturn: 'Make a U-turn', arrive: 'Arrive',
+  start: 'Head',
+  straight: 'Continue',
+  slight_left: 'Bear left',
+  left: 'Turn left',
+  sharp_left: 'Turn sharp left',
+  slight_right: 'Bear right',
+  right: 'Turn right',
+  sharp_right: 'Turn sharp right',
+  uturn: 'Make a U-turn',
+  arrive: 'Arrive',
 };
 
 const GENERIC = new Set(['the footpath', 'the steps', 'the lane', 'the road']);
@@ -60,7 +80,13 @@ export function buildSteps(g: Graph, segEdge: number[], coords: LonLat[]): Step[
   const steps: Step[] = [];
   if (coords.length < 2) return steps;
   const segLen = (i: number) => g.proj.dist(coords[i][0], coords[i][1], coords[i + 1][0], coords[i + 1][1]);
-  let cur: Step = { text: GENERIC.has(roadLabel(g, segEdge[0])) ? 'Start along the route' : `Head along ${roadLabel(g, segEdge[0])}`, turn: 'start', distM: 0, at: coords[0], idx: 0 };
+  let cur: Step = {
+    text: GENERIC.has(roadLabel(g, segEdge[0])) ? 'Start along the route' : `Head along ${roadLabel(g, segEdge[0])}`,
+    turn: 'start',
+    distM: 0,
+    at: coords[0],
+    idx: 0,
+  };
   let curName = roadLabel(g, segEdge[0]);
   for (let i = 0; i < coords.length - 1; i++) {
     const e = segEdge[Math.min(i, segEdge.length - 1)];
@@ -81,6 +107,12 @@ export function buildSteps(g: Graph, segEdge: number[], coords: LonLat[]): Step[
     cur.distM += segLen(i);
   }
   steps.push(cur);
-  steps.push({ text: 'You have arrived', turn: 'arrive', distM: 0, at: coords[coords.length - 1], idx: coords.length - 1 });
+  steps.push({
+    text: 'You have arrived',
+    turn: 'arrive',
+    distM: 0,
+    at: coords[coords.length - 1],
+    idx: coords.length - 1,
+  });
   return steps.map((s) => ({ ...s, distM: Math.round(s.distM) }));
 }

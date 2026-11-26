@@ -47,8 +47,12 @@ async function one(f) {
 
 const queue = [...manifest.files];
 const stats = { kept: 0, fetched: 0 };
-await Promise.all(Array.from({ length: 4 }, async () => {
-  for (let f = queue.shift(); f; f = queue.shift()) stats[await one(f)]++;
-}));
+await Promise.all(
+  Array.from({ length: 4 }, async () => {
+    for (let f = queue.shift(); f; f = queue.shift()) stats[await one(f)]++;
+  }),
+);
 const mb = manifest.files.reduce((s, f) => s + f.bytes, 0) / 1e6;
-console.log(`map data ready: ${stats.fetched} fetched, ${stats.kept} already present (${mb.toFixed(1)} MB, checksums verified)`);
+console.log(
+  `map data ready: ${stats.fetched} fetched, ${stats.kept} already present (${mb.toFixed(1)} MB, checksums verified)`,
+);

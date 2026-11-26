@@ -29,6 +29,9 @@ for (const iso of ['2026-11-06T13:00:00+05:30', '2026-11-06T22:30:00+05:30']) {
   for (const [name, from, to, mode] of trips) {
     const res = router.route({ from, to, mode, when, ctx: { when, profile: 'woman', pois } }, risk);
     console.log(`${name} | ${mode} | ${res.computeMs.toFixed(0)} ms ${res.error ?? ''} ${res.note ?? ''}`);
-    for (const r of res.routes) console.log(`   ${TIER_INFO[r.tier].label.padEnd(9)} ${(r.timeS / 60).toFixed(0)} min ${(r.lengthM / 1000).toFixed(1)} km risk=${r.meanRisk.toFixed(2)} pts=${r.coords.length} havens=${r.havenIds.length} ${r.labels.join(',')}`);
+    for (const r of res.routes)
+      console.log(
+        `   ${TIER_INFO[r.tier].label.padEnd(9)} ${(r.timeS / 60).toFixed(0)} min ${(r.lengthM / 1000).toFixed(1)} km risk=${r.meanRisk.toFixed(2)} pts=${r.coords.length} havens=${r.havenIds.length} ${r.labels.join(',')}`,
+      );
   }
 }

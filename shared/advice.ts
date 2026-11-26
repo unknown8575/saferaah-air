@@ -19,7 +19,8 @@ const RANK: Record<Tier, number> = { green: 0, yellow: 1, red: 2, darkred: 3 };
 
 function fmtClock(when: Date): string {
   const m = istTime(when).minutes;
-  const h = Math.floor(m / 60), mm = m % 60;
+  const h = Math.floor(m / 60),
+    mm = m % 60;
   const h12 = ((h + 11) % 12) + 1;
   return `${h12}:${String(mm).padStart(2, '0')} ${h < 12 ? 'am' : 'pm'}`;
 }
@@ -40,13 +41,13 @@ export function adviseTrip(opts: {
   const clock = fmtClock(when);
   const who = profile === 'child' ? 'for a child ' : '';
 
-  if (mode === 'walk' && bestRank >= 2 && best.lengthM > 700 && vehicleAltS &&
-      RANK[vehicleAltS.tier] <= bestRank) {
+  if (mode === 'walk' && bestRank >= 2 && best.lengthM > 700 && vehicleAltS && RANK[vehicleAltS.tier] <= bestRank) {
     const mins = Math.max(1, Math.round(vehicleAltS.timeS / 60));
     return {
       level: 'warn',
       title: `Walking ${who}is risky on every route right now`,
-      body: `It is ${clock} and even the safest walk (${km} km) passes quiet, closed stretches. ` +
+      body:
+        `It is ${clock} and even the safest walk (${km} km) passes quiet, closed stretches. ` +
         `${MODE_INFO[vehicleAltS.mode].label} takes about ${mins} min — consider it, and share your trip.`,
       suggestMode: vehicleAltS.mode,
     };
@@ -62,9 +63,10 @@ export function adviseTrip(opts: {
     return {
       level: 'caution',
       title: 'Choose the safest route and stay alert',
-      body: best === routes[0]
-        ? 'The fastest route is also the least risky one, but it has quiet stretches.'
-        : 'The safer route takes a little longer but keeps you on busier, more open streets.',
+      body:
+        best === routes[0]
+          ? 'The fastest route is also the least risky one, but it has quiet stretches.'
+          : 'The safer route takes a little longer but keeps you on busier, more open streets.',
     };
   }
   if (bestRank === 1) {

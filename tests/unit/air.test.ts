@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
-  naqi, bandOf, AirField, streetFactor, streetFactors, doseUg, parseOpenMeteo, cleanestWindow, encodeAir, BREATHING,
+  naqi,
+  bandOf,
+  AirField,
+  streetFactor,
+  streetFactors,
+  doseUg,
+  parseOpenMeteo,
+  cleanestWindow,
+  encodeAir,
+  BREATHING,
 } from '../../shared/air.ts';
 import { airEdgeDeltas, liveEdgeDeltas, REPORT_KINDS, isAirReport, type LiveReport } from '../../shared/live.ts';
 import { delhi, ist } from '../helpers.ts';
@@ -32,9 +41,15 @@ describe('Indian National AQI (CPCB)', () => {
 });
 
 describe('Open-Meteo forecast parsing', () => {
-  const hours = Array.from({ length: 48 }, (_, i) => `2026-11-26T${String(i % 24).padStart(2, '0')}:00`.replace('26T', i < 24 ? '26T' : '27T'));
-  const pm = hours.map((_, i) => 100 + 80 * Math.cos(((i % 24) - 6) / 24 * 2 * Math.PI));
-  const j = { utc_offset_seconds: 19800, current: { pm2_5: 210, pm10: 330 }, hourly: { time: hours, pm2_5: pm, pm10: pm.map((x) => x * 1.6) } };
+  const hours = Array.from({ length: 48 }, (_, i) =>
+    `2026-11-26T${String(i % 24).padStart(2, '0')}:00`.replace('26T', i < 24 ? '26T' : '27T'),
+  );
+  const pm = hours.map((_, i) => 100 + 80 * Math.cos((((i % 24) - 6) / 24) * 2 * Math.PI));
+  const j = {
+    utc_offset_seconds: 19800,
+    current: { pm2_5: 210, pm10: 330 },
+    hourly: { time: hours, pm2_5: pm, pm10: pm.map((x) => x * 1.6) },
+  };
   it('TC-152 picks the current hour (IST) and the next 24 hours', () => {
     const a = parseOpenMeteo(j, new Date('2026-11-26T04:40:00Z'))!; // 10:10 IST
     expect(a.at).toBe('2026-11-26T10:00');
@@ -60,7 +75,15 @@ describe('street air field', () => {
     expect(air.a.indM.length).toBe(g.m);
     expect(air.meta.areas).toContain('Ghazipur landfill');
     expect(air.meta.areas.some((a) => /Wazirpur/.test(a))).toBe(true);
-    const tiny = encodeAir({ indM: Uint8Array.of(0, 50), majM: Uint8Array.of(0, 10), dumpM: Uint8Array.of(255, 1), area: Int16Array.of(-1, 0) }, { areas: ['X'], cellM: 50, source: 't' });
+    const tiny = encodeAir(
+      {
+        indM: Uint8Array.of(0, 50),
+        majM: Uint8Array.of(0, 10),
+        dumpM: Uint8Array.of(255, 1),
+        area: Int16Array.of(-1, 0),
+      },
+      { areas: ['X'], cellM: 50, source: 't' },
+    );
     const back = new AirField(tiny);
     expect(back.indM(1)).toBe(500);
     expect(back.areaName(1)).toBe('X');
@@ -75,7 +98,10 @@ describe('street air field', () => {
     let quiet = 0;
     for (let e = 0; e < g.m; e++) if (factor[e] < 1.05) quiet++;
     expect(quiet / g.m).toBeGreaterThan(0.2);
-    for (const v of factor) { expect(v).toBeGreaterThanOrEqual(0.69); expect(v).toBeLessThanOrEqual(2.21); }
+    for (const v of factor) {
+      expect(v).toBeGreaterThanOrEqual(0.69);
+      expect(v).toBeLessThanOrEqual(2.21);
+    }
   });
   it('TC-157 dose grows with time, PM and breathing; closed cars let in less', () => {
     expect(doseUg(100, 1, 3600, 'walk')).toBeCloseTo(140);
@@ -88,13 +114,28 @@ describe('street air field', () => {
 
 describe('clean-air routing', () => {
   const when = ist('09:30');
-  const plan = (from: [number, number], to: [number, number], mode: 'walk' | 'auto' | 'car' | 'twowheeler', f = factor) =>
-    router.route({ from, to, mode, when, ctx: { when, profile: 'woman', pois, crowd: new Map(), live: new Map() }, air: { field: air, factor: f, pm25: 180 } });
+  const plan = (
+    from: [number, number],
+    to: [number, number],
+    mode: 'walk' | 'auto' | 'car' | 'twowheeler',
+    f = factor,
+  ) =>
+    router.route({
+      from,
+      to,
+      mode,
+      when,
+      ctx: { when, profile: 'woman', pois, crowd: new Map(), live: new Map() },
+      air: { field: air, factor: f, pm25: 180 },
+    });
 
   it('TC-158 every route carries an air score and exactly one route is the cleanest', () => {
     const r = plan([77.13, 28.635], [77.085, 28.625], 'auto');
     expect(r.routes.length).toBeGreaterThan(0);
-    for (const x of r.routes) { expect(x.air).toBeDefined(); expect(x.air!.doseUg).toBeGreaterThan(0); }
+    for (const x of r.routes) {
+      expect(x.air).toBeDefined();
+      expect(x.air!.doseUg).toBeGreaterThan(0);
+    }
     const tags = r.routes.flatMap((x) => x.labels).filter((l) => l === 'Cleanest air' || l === 'Also cleanest');
     expect(tags).toHaveLength(1);
     const fastest = r.routes.find((x) => x.labels.includes('Fastest'))!;
@@ -106,19 +147,35 @@ describe('clean-air routing', () => {
     }
   });
   it('TC-159 the cleanest route has the lowest dose of all routes offered', () => {
-    for (const [f, t, m] of [[[77.13, 28.635], [77.085, 28.625], 'auto'], [[77.2197, 28.6328], [77.2295, 28.6129], 'walk'], [[77.334, 28.61], [77.316, 28.647], 'twowheeler']] as const) {
+    for (const [f, t, m] of [
+      [[77.13, 28.635], [77.085, 28.625], 'auto'],
+      [[77.2197, 28.6328], [77.2295, 28.6129], 'walk'],
+      [[77.334, 28.61], [77.316, 28.647], 'twowheeler'],
+    ] as const) {
       const r = plan(f as [number, number], t as [number, number], m);
       const c = r.routes.find((x) => x.labels.includes('Cleanest air') || x.labels.includes('Also cleanest'))!;
       for (const x of r.routes) expect(c.air!.doseUg).toBeLessThanOrEqual(x.air!.doseUg + 1e-6);
     }
   });
   it('TC-160 a garbage-burning report makes the clean route avoid that street', () => {
-    const from: [number, number] = [77.2197, 28.6328], to: [number, number] = [77.2295, 28.6129];
+    const from: [number, number] = [77.2197, 28.6328],
+      to: [number, number] = [77.2295, 28.6129];
     const base = plan(from, to, 'walk');
     const fastest = base.routes.find((x) => x.labels.includes('Fastest'))!;
     const mid = fastest.coords[Math.floor(fastest.coords.length / 2)];
     const T = when.getTime();
-    const reports: LiveReport[] = [{ id: 'b', kind: 'burning', lon: mid[0], lat: mid[1], createdAt: T, expiresAt: T + 6 * 3600000, confirms: 3, dismisses: 0 }];
+    const reports: LiveReport[] = [
+      {
+        id: 'b',
+        kind: 'burning',
+        lon: mid[0],
+        lat: mid[1],
+        createdAt: T,
+        expiresAt: T + 6 * 3600000,
+        confirms: 3,
+        dismisses: 0,
+      },
+    ];
     const live = airEdgeDeltas(g, reports, T);
     expect(live.size).toBeGreaterThan(0);
     const f2 = streetFactors(g, air, { live });

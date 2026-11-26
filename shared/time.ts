@@ -24,8 +24,12 @@ export function istTime(date: Date): LocalTime {
 export function istWallClockDate(date: Date): Date {
   const t = new Date(date.getTime() + IST_OFFSET_MIN * 60000);
   return new Date(
-    t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(),
-    t.getUTCHours(), t.getUTCMinutes(), t.getUTCSeconds(),
+    t.getUTCFullYear(),
+    t.getUTCMonth(),
+    t.getUTCDate(),
+    t.getUTCHours(),
+    t.getUTCMinutes(),
+    t.getUTCSeconds(),
   );
 }
 
@@ -54,12 +58,20 @@ export function darkness(date: Date): number {
  * because Delhi markets are active; late night (23–05 h) is 1.0.
  */
 const TAU_KEYS: [number, number][] = [
-  [0, 1], [5, 1], [7, 0.35], [17.5, 0.35], [19, 0.6], [21, 0.75], [23, 1], [24, 1],
+  [0, 1],
+  [5, 1],
+  [7, 0.35],
+  [17.5, 0.35],
+  [19, 0.6],
+  [21, 0.75],
+  [23, 1],
+  [24, 1],
 ];
 export function timeScale(date: Date): number {
   const h = istTime(date).hour;
   for (let i = 1; i < TAU_KEYS.length; i++) {
-    const [h0, v0] = TAU_KEYS[i - 1], [h1, v1] = TAU_KEYS[i];
+    const [h0, v0] = TAU_KEYS[i - 1],
+      [h1, v1] = TAU_KEYS[i];
     if (h >= h0 && h <= h1) return v0 + ((h - h0) / (h1 - h0)) * (v1 - v0);
   }
   return 1;

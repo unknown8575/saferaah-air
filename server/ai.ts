@@ -9,11 +9,26 @@
 //   GEMINI_DAILY_LIMIT    most Gemini answers per day for the whole server (default 500)
 // Without them the assistant uses its built-in engine and air comes from Open-Meteo.
 import { createHash } from 'node:crypto';
-import { parseOpenMeteo, parseWeather, parseSensors, aqiFrom, AIR_URL, WEATHER_URL, type AirNow } from '../shared/air.ts';
+import {
+  parseOpenMeteo,
+  parseWeather,
+  parseSensors,
+  aqiFrom,
+  AIR_URL,
+  WEATHER_URL,
+  type AirNow,
+} from '../shared/air.ts';
 import { NOTES } from '../shared/saans/knowledge.ts';
 import { cosine } from '../shared/saans/retrieve.ts';
 import {
-  buildPrompt, compose, groundingNotes, cleanModelText, factsFor, type Answer, type AssistantContext, type Turn,
+  buildPrompt,
+  compose,
+  groundingNotes,
+  cleanModelText,
+  factsFor,
+  type Answer,
+  type AssistantContext,
+  type Turn,
 } from '../shared/saans/assistant.ts';
 
 export type Fetch = typeof fetch;
@@ -40,7 +55,9 @@ export function aiConfigFromEnv(): AiConfig {
     embedModel: process.env.GEMINI_EMBED_MODEL || undefined,
     airKey: process.env.GOOGLE_AIR_KEY || undefined,
     // on Cloud Run (K_SERVICE is set) with no key, use Vertex AI unless GEMINI_VERTEX=0
-    vertex: process.env.GEMINI_VERTEX === '1' || (!process.env.GEMINI_API_KEY && !!process.env.K_SERVICE && process.env.GEMINI_VERTEX !== '0'),
+    vertex:
+      process.env.GEMINI_VERTEX === '1' ||
+      (!process.env.GEMINI_API_KEY && !!process.env.K_SERVICE && process.env.GEMINI_VERTEX !== '0'),
     project: process.env.GOOGLE_CLOUD_PROJECT || undefined,
     dailyLimit: process.env.GEMINI_DAILY_LIMIT ? Number(process.env.GEMINI_DAILY_LIMIT) : undefined,
   };
@@ -49,11 +66,23 @@ export function aiConfigFromEnv(): AiConfig {
 async function withTimeout<T>(ms: number, f: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
-  try { return await f(ctl.signal); } finally { clearTimeout(t); }
+  try {
+    return await f(ctl.signal);
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 /** Model names to try, newest-stable aliases first; the first that answers is kept. */
-const MODEL_CANDIDATES = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const MODEL_CANDIDATES = [
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+];
 const META = 'http://metadata.google.internal/computeMetadata/v1';
 const CACHE_MS = 10 * 60000;
 const CACHE_MAX = 300;
@@ -84,10 +113,18 @@ export class Ai {
     this.project = cfg.project ?? null;
   }
   /** Gemini through an AI Studio key, or through Vertex AI with the service's own identity. */
-  get mode(): 'key' | 'vertex' | null { return this.cfg.geminiKey ? 'key' : this.cfg.vertex ? 'vertex' : null; }
-  get hasGemini() { return this.mode !== null; }
-  get hasGoogleAir() { return !!this.cfg.airKey; }
-  private get now() { return (this.cfg.now ?? Date.now)(); }
+  get mode(): 'key' | 'vertex' | null {
+    return this.cfg.geminiKey ? 'key' : this.cfg.vertex ? 'vertex' : null;
+  }
+  get hasGemini() {
+    return this.mode !== null;
+  }
+  get hasGoogleAir() {
+    return !!this.cfg.airKey;
+  }
+  private get now() {
+    return (this.cfg.now ?? Date.now)();
+  }
 
   /** Count one Gemini answer against today's cap; false when the cap is reached. */
   private takeQuota(): boolean {
@@ -101,7 +138,9 @@ export class Ai {
   /** Vertex AI: an access token for the Cloud Run service account, from the metadata server. */
   private async vertexAuth(): Promise<{ token: string; project: string }> {
     if (!this.token || this.token.until < this.now) {
-      const r = await this.f(`${META}/instance/service-accounts/default/token`, { headers: { 'Metadata-Flavor': 'Google' } });
+      const r = await this.f(`${META}/instance/service-accounts/default/token`, {
+        headers: { 'Metadata-Flavor': 'Google' },
+      });
       if (!r.ok) throw new Error(`metadata token ${r.status}`);
       const j = await r.json();
       this.token = { value: j.access_token, until: this.now + (Number(j.expires_in ?? 300) - 60) * 1000 };
@@ -129,22 +168,43 @@ export class Ai {
       }
       const r = await this.f(url, { method: 'POST', signal, headers, body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw Object.assign(new Error(`Gemini ${r.status}: ${j?.error?.message ?? 'error'}`), { status: r.status });
+      if (!r.ok)
+        throw Object.assign(new Error(`Gemini ${r.status}: ${j?.error?.message ?? 'error'}`), { status: r.status });
       return j;
     });
   }
 
   /** Embed texts (vector search). AI Studio takes a batch; Vertex takes one text per call. */
-  private async embed(texts: { text: string; title?: string }[], task: 'RETRIEVAL_DOCUMENT' | 'RETRIEVAL_QUERY', ms = 15000): Promise<number[][]> {
+  private async embed(
+    texts: { text: string; title?: string }[],
+    task: 'RETRIEVAL_DOCUMENT' | 'RETRIEVAL_QUERY',
+    ms = 15000,
+  ): Promise<number[][]> {
     if (this.mode === 'key') {
-      const j = await this.call(this.embedModel, 'batchEmbedContents', {
-        requests: texts.map((t) => ({ model: `models/${this.embedModel}`, taskType: task, title: t.title, content: { parts: [{ text: t.text }] } })),
-      }, ms);
+      const j = await this.call(
+        this.embedModel,
+        'batchEmbedContents',
+        {
+          requests: texts.map((t) => ({
+            model: `models/${this.embedModel}`,
+            taskType: task,
+            title: t.title,
+            content: { parts: [{ text: t.text }] },
+          })),
+        },
+        ms,
+      );
       return (j.embeddings ?? []).map((e: any) => e.values as number[]);
     }
-    const j = await this.call(this.embedModel, 'predict', {
-      instances: texts.map((t) => ({ content: t.text, task_type: task, ...(t.title ? { title: t.title } : {}) })),
-    }, ms, 'us-central1');
+    const j = await this.call(
+      this.embedModel,
+      'predict',
+      {
+        instances: texts.map((t) => ({ content: t.text, task_type: task, ...(t.title ? { title: t.title } : {}) })),
+      },
+      ms,
+      'us-central1',
+    );
     return (j.predictions ?? []).map((p: any) => p?.embeddings?.values as number[]);
   }
 
@@ -152,7 +212,11 @@ export class Ai {
   private async notesEmbedded(): Promise<number[][] | null> {
     if (this.noteVecs || !this.hasGemini || this.now < this.embedRetryAt) return this.noteVecs;
     try {
-      const vecs = await this.embed(NOTES.map((n) => ({ title: n.title, text: `${n.title}. ${n.text} ${n.tags}` })), 'RETRIEVAL_DOCUMENT', 30000);
+      const vecs = await this.embed(
+        NOTES.map((n) => ({ title: n.title, text: `${n.title}. ${n.text} ${n.tags}` })),
+        'RETRIEVAL_DOCUMENT',
+        30000,
+      );
       if (vecs.length !== NOTES.length || vecs.some((v) => !v?.length)) throw new Error('embedding count mismatch');
       this.noteVecs = vecs;
     } catch (err) {
@@ -168,7 +232,9 @@ export class Ai {
     try {
       const [qv] = await this.embed([{ text: q }], 'RETRIEVAL_QUERY', 8000);
       return qv?.length ? vecs.map((v) => cosine(qv, v)) : undefined;
-    } catch { return undefined; }
+    } catch {
+      return undefined;
+    }
   }
 
   /** generateContent on the first model that exists; remembers it. */
@@ -199,9 +265,16 @@ export class Ai {
   }
 
   /** Answer a question: Gemini grounded on our facts and notes, or the built-in engine. */
-  async answer(q: string, ctx: AssistantContext, history: Turn[] = []): Promise<Answer & { fallback?: boolean; reason?: string; cached?: boolean }> {
-    if (this.hasGemini && this.now < this.openUntil) return { ...compose(q, ctx), fallback: true, reason: 'Gemini paused after errors' };
-    const key = createHash('sha256').update(JSON.stringify([q.trim().toLowerCase(), factsFor(ctx), history])).digest('base64url');
+  async answer(
+    q: string,
+    ctx: AssistantContext,
+    history: Turn[] = [],
+  ): Promise<Answer & { fallback?: boolean; reason?: string; cached?: boolean }> {
+    if (this.hasGemini && this.now < this.openUntil)
+      return { ...compose(q, ctx), fallback: true, reason: 'Gemini paused after errors' };
+    const key = createHash('sha256')
+      .update(JSON.stringify([q.trim().toLowerCase(), factsFor(ctx), history]))
+      .digest('base64url');
     const hit = this.cache.get(key);
     if (hit && this.now - hit.at < CACHE_MS) return { ...hit.a, cached: true };
     const useGemini = this.hasGemini && this.takeQuota();
@@ -218,7 +291,11 @@ export class Ai {
         generationConfig: { maxOutputTokens: 2048 },
         safetySettings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }],
       });
-      const text = (j.candidates?.[0]?.content?.parts ?? []).filter((x: any) => !x.thought).map((x: any) => x.text ?? '').join('').trim();
+      const text = (j.candidates?.[0]?.content?.parts ?? [])
+        .filter((x: any) => !x.thought)
+        .map((x: any) => x.text ?? '')
+        .join('')
+        .trim();
       if (!text) throw new Error('empty answer');
       const a: Answer = { ...base, text: cleanModelText(text), engine: 'gemini', model: j.modelVersion ?? model };
       this.fails = 0;
@@ -227,7 +304,10 @@ export class Ai {
       return a;
     } catch (err) {
       console.warn('[saans] Gemini failed, using built-in answer:', (err as Error).message);
-      if (++this.fails >= BREAKER_FAILS) { this.openUntil = this.now + BREAKER_MS; this.fails = 0; }
+      if (++this.fails >= BREAKER_FAILS) {
+        this.openUntil = this.now + BREAKER_MS;
+        this.fails = 0;
+      }
       const st = (err as { status?: number }).status;
       return { ...base, fallback: true, reason: st === 429 ? 'Gemini is busy' : 'Gemini unavailable' };
     }
@@ -240,14 +320,16 @@ export class Ai {
    * bounded (oldest entries go first).
    */
   async air(lat: number, lon: number): Promise<AirNow | null> {
-    const la = lat.toFixed(1), lo = lon.toFixed(1);
+    const la = lat.toFixed(1),
+      lo = lon.toFixed(1);
     const key = `${la},${lo}`;
     const hit = this.airCache.get(key);
     if (hit && this.now - hit.at < (hit.v ? 30 : 2) * 60000) return hit.v;
-    const get = (url: string, ms = 8000) => withTimeout(ms, async (signal) => {
-      const r = await this.f(url, { signal });
-      return r.ok ? r.json() : null;
-    }).catch(() => null);
+    const get = (url: string, ms = 8000) =>
+      withTimeout(ms, async (signal) => {
+        const r = await this.f(url, { signal });
+        return r.ok ? r.json() : null;
+      }).catch(() => null);
     const [air, wx, sensors] = await Promise.all([
       get(AIR_URL(la, lo)),
       get(WEATHER_URL(la, lo)),
@@ -258,23 +340,34 @@ export class Ai {
       try {
         const g = await withTimeout(8000, async (signal) => {
           const r = await this.f('https://airquality.googleapis.com/v1/currentConditions:lookup', {
-            method: 'POST', signal, headers: { 'content-type': 'application/json', 'x-goog-api-key': this.cfg.airKey! },
-            body: JSON.stringify({ location: { latitude: lat, longitude: lon }, extraComputations: ['POLLUTANT_CONCENTRATION', 'LOCAL_AQI'] }),
+            method: 'POST',
+            signal,
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': this.cfg.airKey! },
+            body: JSON.stringify({
+              location: { latitude: lat, longitude: lon },
+              extraComputations: ['POLLUTANT_CONCENTRATION', 'LOCAL_AQI'],
+            }),
           });
           return r.ok ? r.json() : null;
         });
-        const pm = (code: string) => g?.pollutants?.find((p: any) => p.code === code)?.concentration?.value as number | undefined;
-        const pm25 = pm('pm25'), pm10 = pm('pm10');
+        const pm = (code: string) =>
+          g?.pollutants?.find((p: any) => p.code === code)?.concentration?.value as number | undefined;
+        const pm25 = pm('pm25'),
+          pm10 = pm('pm10');
         if (pm25 != null) {
           v = {
             ...(v ?? { hours: [] }),
-            at: g.dateTime ?? new Date(this.now).toISOString(), pm25, pm10: pm10 ?? v?.pm10 ?? pm25 * 1.6,
+            at: g.dateTime ?? new Date(this.now).toISOString(),
+            pm25,
+            pm10: pm10 ?? v?.pm10 ?? pm25 * 1.6,
             // keep the CPCB 24-hour AQI from the forecast when we have it; otherwise this hour's estimate
             aqi: v?.aqi.basis === '24h' ? v.aqi : aqiFrom(pm25, pm10, 'hourly')!,
             source: v ? 'Google Air Quality API (now) + CAMS forecast' : 'Google Air Quality API',
           } as AirNow;
         }
-      } catch { /* keep the CAMS reading */ }
+      } catch {
+        /* keep the CAMS reading */
+      }
     }
     if (v) {
       v.weather = wx ? parseWeather(wx, new Date(this.now)) : null;

@@ -30,7 +30,8 @@ describe('offline search (FR-1)', () => {
     expect(s.query('india gate')[0]).toMatchObject({ name: 'India Gate', type: 'landmark' });
     expect(s.query('rajiv chowk').some((h) => h.type === 'police')).toBe(true);
     // outer districts are searchable too
-    for (const q of ['narela', 'najafgarh', 'mangolpuri', 'sangam vihar', 'shahdara']) expect(s.query(q).length).toBeGreaterThan(0);
+    for (const q of ['narela', 'najafgarh', 'mangolpuri', 'sangam vihar', 'shahdara'])
+      expect(s.query(q).length).toBeGreaterThan(0);
   });
   it('TC-83 short, gibberish and messy queries', () => {
     expect(s.query('l')).toEqual([]);

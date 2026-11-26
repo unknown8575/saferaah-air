@@ -4,7 +4,12 @@ import type { Mode } from '../../shared/modes.ts';
 import type { Profile } from '../../shared/risk.ts';
 import { DEFAULT_FAMILY, type Family } from '../../shared/saans/plan.ts';
 
-export interface Contact { id: string; name: string; phone: string; notify: boolean }
+export interface Contact {
+  id: string;
+  name: string;
+  phone: string;
+  notify: boolean;
+}
 export interface Settings {
   profile: Profile;
   mode: Mode;
@@ -23,9 +28,18 @@ export interface Settings {
 }
 
 const KEY = 'saferaah.v1';
-const DEFAULTS: Settings = { profile: 'woman', mode: 'walk', contacts: [], travellerName: '', simulate: false, seenIntro: false,
-  layers: { safety: true, reports: true, pois: true, traffic: false }, voice: true,
-  family: DEFAULT_FAMILY, familySet: false };
+const DEFAULTS: Settings = {
+  profile: 'woman',
+  mode: 'walk',
+  contacts: [],
+  travellerName: '',
+  simulate: false,
+  seenIntro: false,
+  layers: { safety: true, reports: true, pois: true, traffic: false },
+  voice: true,
+  family: DEFAULT_FAMILY,
+  familySet: false,
+};
 
 let mem: Settings | null = null;
 
@@ -42,14 +56,21 @@ export function load(): Settings {
 
 export function save(patch: Partial<Settings>): Settings {
   mem = { ...load(), ...patch };
-  try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch { /* in-memory only */ }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(mem));
+  } catch {
+    /* in-memory only */
+  }
   return mem;
 }
 
 export function deviceId(): string {
   try {
     let id = localStorage.getItem('saferaah.device');
-    if (!id) { id = crypto.randomUUID(); localStorage.setItem('saferaah.device', id); }
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem('saferaah.device', id);
+    }
     return id;
   } catch {
     return (mem as unknown as { _dev?: string })?._dev ?? crypto.randomUUID();

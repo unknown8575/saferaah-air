@@ -64,9 +64,9 @@ export function openDb(path: string): DatabaseSync {
     );
   `);
   // migrate older databases
-  const cols = new Set((db.prepare("PRAGMA table_info(journeys)").all() as { name: string }[]).map((c) => c.name));
+  const cols = new Set((db.prepare('PRAGMA table_info(journeys)').all() as { name: string }[]).map((c) => c.name));
   if (!cols.has('simulated')) db.exec('ALTER TABLE journeys ADD COLUMN simulated INTEGER NOT NULL DEFAULT 0');
-  const vcols = (db.prepare("PRAGMA table_info(edge_votes)").all() as { name: string }[]).map((c) => c.name);
+  const vcols = (db.prepare('PRAGMA table_info(edge_votes)').all() as { name: string }[]).map((c) => c.name);
   if (!vcols.includes('tags')) db.exec("ALTER TABLE edge_votes ADD COLUMN tags TEXT NOT NULL DEFAULT ''");
   if (!cols.has('ended_at')) db.exec('ALTER TABLE journeys ADD COLUMN ended_at INTEGER');
   // older versions kept reviews with comments linked to trips; nothing like that is kept now

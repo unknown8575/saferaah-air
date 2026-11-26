@@ -31,21 +31,43 @@ worker.onmessage = (ev) => {
   const p = pending.get(ev.data.id);
   if (!p) return;
   pending.delete(ev.data.id);
-  if (ev.data.type === 'error') p.rej(new Error(ev.data.message)); else p.res(ev.data);
+  if (ev.data.type === 'error') p.rej(new Error(ev.data.message));
+  else p.res(ev.data);
 };
 export function rpc<T = any>(msg: Record<string, unknown>): Promise<T> {
   const id = ++rpcId;
-  return new Promise((res, rej) => { pending.set(id, { res, rej }); worker.postMessage({ ...msg, id }); });
+  return new Promise((res, rej) => {
+    pending.set(id, { res, rej });
+    worker.postMessage({ ...msg, id });
+  });
 }
 
 // ---------- state ----------
 export interface Place {
-  lonlat: LonLat; label: string; sub?: string; poi?: number; kind?: string;
-  street?: string; risk?: number | null; mine?: boolean;
+  lonlat: LonLat;
+  label: string;
+  sub?: string;
+  poi?: number;
+  kind?: string;
+  street?: string;
+  risk?: number | null;
+  mine?: boolean;
   /** for places from the nearby-places index: open/closed from these */
-  cat?: PoiCat; oh?: string;
+  cat?: PoiCat;
+  oh?: string;
 }
-export type View = 'home' | 'place' | 'category' | 'directions' | 'details' | 'pick' | 'journey' | 'arrived' | 'contacts' | 'help' | 'track';
+export type View =
+  | 'home'
+  | 'place'
+  | 'category'
+  | 'directions'
+  | 'details'
+  | 'pick'
+  | 'journey'
+  | 'arrived'
+  | 'contacts'
+  | 'help'
+  | 'track';
 export type LocStatus = 'idle' | 'asking' | 'on' | 'denied' | 'unavailable';
 export type Pref = 'fastest' | 'safest' | 'balanced';
 
@@ -53,14 +75,18 @@ export const S = {
   settings: load(),
   version: 'dev',
   snapshot: '',
-  bbox: [76.83, 28.40, 77.35, 28.89] as [number, number, number, number],
+  bbox: [76.83, 28.4, 77.35, 28.89] as [number, number, number, number],
   onewayKnown: true,
   view: 'home' as View,
   loc: { status: 'idle' as LocStatus, fix: null as Fix | null, heading: null as number | null },
   manualMe: null as LonLat | null,
   follow: false,
   place: null as Place | null,
-  category: null as null | { key: string; title: string; items: (Poi & { distM: number; open: boolean; verified: boolean })[] },
+  category: null as null | {
+    key: string;
+    title: string;
+    items: (Poi & { distM: number; open: boolean; verified: boolean })[];
+  },
   from: null as Place | null, // null = your location
   to: null as Place | null,
   leaveAt: null as Date | null, // null = now
@@ -76,17 +102,34 @@ export const S = {
   air: null as AirNow | null,
   airFor: '' as string,
   journey: null as null | {
-    route: WorkerRoute; monitor: JourneyMonitor; source: PositionSource; handle: JourneyHandle | null; pref: Pref;
-    pendingFixes: Fix[]; dest: Place; startedAt: number; clock: () => number; offRoute: boolean;
-    tickTimer: ReturnType<typeof setInterval>; pushTimer: ReturnType<typeof setInterval>; result?: any; sos?: boolean;
-    rerouting?: boolean; lastReroute: number; lastSaferCheck: number; better: WorkerRoute | null; dismissedBetter?: boolean;
-    guide: Guide; islandOpen: boolean;
+    route: WorkerRoute;
+    monitor: JourneyMonitor;
+    source: PositionSource;
+    handle: JourneyHandle | null;
+    pref: Pref;
+    pendingFixes: Fix[];
+    dest: Place;
+    startedAt: number;
+    clock: () => number;
+    offRoute: boolean;
+    tickTimer: ReturnType<typeof setInterval>;
+    pushTimer: ReturnType<typeof setInterval>;
+    result?: any;
+    sos?: boolean;
+    rerouting?: boolean;
+    lastReroute: number;
+    lastSaferCheck: number;
+    better: WorkerRoute | null;
+    dismissedBetter?: boolean;
+    guide: Guide;
+    islandOpen: boolean;
   },
 };
 (window as any).__sr = { S, rpc };
 
 export const now = () => S.leaveAt ?? new Date();
-export const inCoverage = (p: LonLat) => p[0] >= S.bbox[0] && p[0] <= S.bbox[2] && p[1] >= S.bbox[1] && p[1] <= S.bbox[3];
+export const inCoverage = (p: LonLat) =>
+  p[0] >= S.bbox[0] && p[0] <= S.bbox[2] && p[1] >= S.bbox[1] && p[1] <= S.bbox[3];
 /** Where the user is: live GPS (inside Delhi) or the point they marked themselves. */
 export function myLonLat(): LonLat | null {
   const f = S.loc.fix;
@@ -97,7 +140,8 @@ export const myAcc = () => (S.loc.fix && inCoverage([S.loc.fix.lon, S.loc.fix.la
 export const fromLonLat = () => S.from?.lonlat ?? myLonLat();
 export function clockText(d: Date): string {
   const m = istTime(d).minutes;
-  const hh = Math.floor(m / 60), mm = m % 60;
+  const hh = Math.floor(m / 60),
+    mm = m % 60;
   return `${((hh + 11) % 12) + 1}:${String(mm).padStart(2, '0')} ${hh < 12 ? 'am' : 'pm'}`;
 }
 export const TIER_RANK: Record<Tier, number> = { green: 0, yellow: 1, red: 2, darkred: 3 };
@@ -110,8 +154,16 @@ export const mapEl = h('div', { id: 'map', role: 'application', 'aria-label': 'M
 export const top = h('header', { id: 'top' });
 export const fabs = h('div', { id: 'fabs' });
 export const sheet = h('section', { id: 'sheet', 'aria-live': 'polite' });
-export const crosshair = h('div', { id: 'crosshair', hidden: true, 'aria-hidden': 'true' }, h('div', { class: 'pin pin-to' }));
-export const sosBtn = h('button', { id: 'sos', class: 'sos', 'aria-label': 'SOS emergency', on: { click: () => hooks.openSos() } }, 'SOS');
+export const crosshair = h(
+  'div',
+  { id: 'crosshair', hidden: true, 'aria-hidden': 'true' },
+  h('div', { class: 'pin pin-to' }),
+);
+export const sosBtn = h(
+  'button',
+  { id: 'sos', class: 'sos', 'aria-label': 'SOS emergency', on: { click: () => hooks.openSos() } },
+  'SOS',
+);
 export const toastEl = h('div', { id: 'toast', role: 'status' });
 export const modal = h('div', { id: 'modal', hidden: true });
 app.append(mapEl, top, fabs, sheet, crosshair, sosBtn, toastEl, modal);
@@ -124,13 +176,22 @@ const syncSizes = () => {
 };
 new ResizeObserver(syncSizes).observe(sheet);
 // tap the grip (or drag it up) to see more of the sheet, like a map app's bottom panel
-sheet.addEventListener('click', (e) => { if ((e.target as HTMLElement).classList.contains('grip')) sheet.classList.toggle('expanded'); });
+sheet.addEventListener('click', (e) => {
+  if ((e.target as HTMLElement).classList.contains('grip')) sheet.classList.toggle('expanded');
+});
 let gripY: number | null = null;
-sheet.addEventListener('touchstart', (e) => { gripY = (e.target as HTMLElement).classList.contains('grip') ? e.touches[0].clientY : null; }, { passive: true });
+sheet.addEventListener(
+  'touchstart',
+  (e) => {
+    gripY = (e.target as HTMLElement).classList.contains('grip') ? e.touches[0].clientY : null;
+  },
+  { passive: true },
+);
 sheet.addEventListener('touchend', (e) => {
   if (gripY == null) return;
   const dy = e.changedTouches[0].clientY - gripY;
-  if (dy < -30) sheet.classList.add('expanded'); else if (dy > 30) sheet.classList.remove('expanded');
+  if (dy < -30) sheet.classList.add('expanded');
+  else if (dy > 30) sheet.classList.remove('expanded');
   gripY = null;
 });
 new ResizeObserver(syncSizes).observe(top);
@@ -157,7 +218,12 @@ export function setMapParts(p: { smap?: SafeMap; search?: PlaceSearch; named?: t
  * start-up, so modules don't import each other in a circle.
  */
 export const hooks = {
-  renderFabs: () => {}, openSos: () => {}, goHome: () => {}, openDirections: () => {}, showContacts: () => {}, drawMe: () => {},
+  renderFabs: () => {},
+  openSos: () => {},
+  goHome: () => {},
+  openDirections: () => {},
+  showContacts: () => {},
+  drawMe: () => {},
 };
 export const wide = () => window.innerWidth >= 860;
 
@@ -182,7 +248,9 @@ export function setView(v: View) {
 // ---------- modal ----------
 /** The "Are you OK?" check-in timer; while it runs the modal can't be dismissed by accident. */
 export let checkTimer: ReturnType<typeof setInterval> | null = null;
-export function setCheckTimer(t: ReturnType<typeof setInterval> | null) { checkTimer = t; }
+export function setCheckTimer(t: ReturnType<typeof setInterval> | null) {
+  checkTimer = t;
+}
 export function openModal(content: HTMLElement) {
   clear(modal, content);
   modal.hidden = false;
@@ -190,6 +258,14 @@ export function openModal(content: HTMLElement) {
   content.setAttribute('tabindex', '-1');
   content.focus({ preventScroll: true });
 }
-export function closeModal() { modal.hidden = true; clear(modal); if (checkTimer) { clearInterval(checkTimer); checkTimer = null; } }
-modal.addEventListener('click', (e) => { if (e.target === modal && !checkTimer) closeModal(); });
-
+export function closeModal() {
+  modal.hidden = true;
+  clear(modal);
+  if (checkTimer) {
+    clearInterval(checkTimer);
+    checkTimer = null;
+  }
+}
+modal.addEventListener('click', (e) => {
+  if (e.target === modal && !checkTimer) closeModal();
+});

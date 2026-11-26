@@ -3,8 +3,20 @@ import opening_hours from 'opening_hours';
 import { istTime, istWallClockDate } from './time.ts';
 
 export const POI_CATS = [
-  'police', 'hospital', 'clinic', 'pharmacy', 'govt', 'station', 'fuel',
-  'hotel', 'shop', 'food', 'bank', 'atm', 'worship', 'liquor',
+  'police',
+  'hospital',
+  'clinic',
+  'pharmacy',
+  'govt',
+  'station',
+  'fuel',
+  'hotel',
+  'shop',
+  'food',
+  'bank',
+  'atm',
+  'worship',
+  'liquor',
 ] as const;
 export type PoiCat = (typeof POI_CATS)[number];
 
@@ -38,21 +50,27 @@ export const CAT_INFO: Record<PoiCat, { label: string; icon: string; haven: numb
 
 /** Categorise OSM tags into a POI category (null = not a safety-relevant place). */
 export function poiCategory(t: Record<string, string>, kind?: string): PoiCat | null {
-  const a = t.amenity, s = t.shop;
+  const a = t.amenity,
+    s = t.shop;
   if (a === 'police') return 'police';
   if (a === 'hospital' || t.healthcare === 'hospital') return 'hospital';
   if (a === 'clinic' || a === 'doctors' || a === 'dentist' || t.healthcare === 'clinic') return 'clinic';
   if (a === 'pharmacy' || s === 'chemist' || t.healthcare === 'pharmacy') return 'pharmacy';
   if (a === 'blood_bank') return 'clinic';
-  if (a === 'public_building' || a === 'courthouse' || a === 'townhall' || a === 'post_office' ||
-      t.office === 'government') return 'govt';
-  if (kind === 'station' || t.railway === 'station' || t.station === 'subway' ||
-      (t.public_transport === 'station')) return 'station';
+  if (
+    a === 'public_building' ||
+    a === 'courthouse' ||
+    a === 'townhall' ||
+    a === 'post_office' ||
+    t.office === 'government'
+  )
+    return 'govt';
+  if (kind === 'station' || t.railway === 'station' || t.station === 'subway' || t.public_transport === 'station')
+    return 'station';
   if (a === 'fuel') return 'fuel';
   if (t.tourism === 'hotel' || t.tourism === 'guest_house' || t.tourism === 'hostel') return 'hotel';
   if (s === 'alcohol' || a === 'bar' || a === 'pub' || a === 'nightclub') return 'liquor';
-  if (a === 'restaurant' || a === 'fast_food' || a === 'cafe' || a === 'ice_cream' || a === 'food_court')
-    return 'food';
+  if (a === 'restaurant' || a === 'fast_food' || a === 'cafe' || a === 'ice_cream' || a === 'food_court') return 'food';
   if (a === 'bank') return 'bank';
   if (a === 'atm' || a === 'bureau_de_change') return 'atm';
   if (a === 'place_of_worship') return 'worship';
@@ -70,7 +88,10 @@ const DEFAULT_WINDOWS: Record<PoiCat, [number, number][]> = {
   hospital: [[0, 1440]],
   hotel: [[0, 1440]],
   atm: [[0, 1440]],
-  clinic: [[10 * 60, 14 * 60], [17 * 60, 21 * 60]],
+  clinic: [
+    [10 * 60, 14 * 60],
+    [17 * 60, 21 * 60],
+  ],
   pharmacy: [[9 * 60, 22 * 60]],
   govt: [[9 * 60 + 30, 18 * 60]],
   station: [[5 * 60 + 30, 23 * 60 + 30]],
@@ -99,10 +120,15 @@ export function stripPublicHolidays(s: string): string {
     .split(/;|\|\|/)
     .map((r) => r.trim())
     .filter((r) => !/^PH(\s+(off|closed|open|"[^"]*"))?$/i.test(r) && !/^PH\s*[\d"]/.test(r))
-    .map((r) => r
-      .replace(/\s*\bPH\s+(off|closed|open)\b/gi, '')
-      .replace(/\bPH\s*,\s*/g, '').replace(/\s*,\s*PH\b/g, '').replace(/^PH\s+/, '')
-      .replace(/\bPH\b/g, '').trim())
+    .map((r) =>
+      r
+        .replace(/\s*\bPH\s+(off|closed|open)\b/gi, '')
+        .replace(/\bPH\s*,\s*/g, '')
+        .replace(/\s*,\s*PH\b/g, '')
+        .replace(/^PH\s+/, '')
+        .replace(/\bPH\b/g, '')
+        .trim(),
+    )
     .filter((r) => r.length > 0)
     .join('; ');
 }
@@ -114,8 +140,11 @@ function parseOh(raw: string): InstanceType<typeof opening_hours> | null {
   const s = stripPublicHolidays(raw);
   if (s) {
     try {
-      v = new opening_hours(s, { lat: 28.61, lon: 77.21, address: { country_code: 'in', state: 'Delhi' } } as never,
-        { mode: 0, tag_key: 'opening_hours', warnings_severity: 0 } as never);
+      v = new opening_hours(
+        s,
+        { lat: 28.61, lon: 77.21, address: { country_code: 'in', state: 'Delhi' } } as never,
+        { mode: 0, tag_key: 'opening_hours', warnings_severity: 0 } as never,
+      );
     } catch {
       v = null;
     }

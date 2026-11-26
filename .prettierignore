@@ -1,0 +1,13 @@
+node_modules
+web/dist
+web/public
+android
+ios
+coverage
+data
+docs
+*.md
+package-lock.json
+data-manifest.json
+.oxlintrc.json
+web/index.html

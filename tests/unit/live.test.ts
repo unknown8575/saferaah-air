@@ -8,7 +8,15 @@ import { delhi, ist, TRIPS } from '../helpers.ts';
 const { g, router, pois } = delhi();
 const T0 = ist('22:00').getTime();
 const rep = (o: Partial<LiveReport>): LiveReport => ({
-  id: 'r1', kind: 'harassment', lon: 77.2197, lat: 28.6328, createdAt: T0, expiresAt: T0 + 6 * 3600000, confirms: 1, dismisses: 0, ...o,
+  id: 'r1',
+  kind: 'harassment',
+  lon: 77.2197,
+  lat: 28.6328,
+  createdAt: T0,
+  expiresAt: T0 + 6 * 3600000,
+  confirms: 1,
+  dismisses: 0,
+  ...o,
 });
 
 describe('graph lookups for the live map', () => {
@@ -23,7 +31,7 @@ describe('graph lookups for the live map', () => {
     expect(g.edgesNear(lon, lat, 200).length).toBeGreaterThan(near.length);
   });
   it('TC-121 edgesInBox caps the count and keeps the bigger roads', () => {
-    const box = [77.20, 28.62, 77.24, 28.645] as const;
+    const box = [77.2, 28.62, 77.24, 28.645] as const;
     const all = g.edgesInBox(...box, 1e9);
     const few = g.edgesInBox(...box, 300);
     expect(all.length).toBeGreaterThan(300);
@@ -66,28 +74,49 @@ describe('live safety reports', () => {
     const plain = router.route({ ...TRIPS.lajpatSoami, mode: 'walk', when, ctx: { when, profile: 'woman', pois } });
     const fast = plain.routes[0];
     const mid = fast.coords[Math.floor(fast.coords.length / 2)];
-    const live = liveEdgeDeltas(g, [rep({ lon: mid[0], lat: mid[1], confirms: 4, createdAt: when.getTime(), expiresAt: when.getTime() + 6 * 3600000 })], when.getTime());
+    const live = liveEdgeDeltas(
+      g,
+      [
+        rep({
+          lon: mid[0],
+          lat: mid[1],
+          confirms: 4,
+          createdAt: when.getTime(),
+          expiresAt: when.getTime() + 6 * 3600000,
+        }),
+      ],
+      when.getTime(),
+    );
     const risk = computeRisk(g, { when, profile: 'woman', pois, live });
-    const after = router.route({ ...TRIPS.lajpatSoami, mode: 'walk', when, ctx: { when, profile: 'woman', pois, live } }, risk);
-    const sameLine = after.routes.find((r) => r.edges.length === fast.edges.length && r.edges.every((e, i) => e === fast.edges[i]));
+    const after = router.route(
+      { ...TRIPS.lajpatSoami, mode: 'walk', when, ctx: { when, profile: 'woman', pois, live } },
+      risk,
+    );
+    const sameLine = after.routes.find(
+      (r) => r.edges.length === fast.edges.length && r.edges.every((e, i) => e === fast.edges[i]),
+    );
     if (sameLine) expect(sameLine.meanRisk).toBeGreaterThan(fast.meanRisk);
     const reasons = after.routes.flatMap((r) => r.dangerSpots.flatMap((d) => d.reasons));
     const passes = after.routes.some((r) => r.edges.some((e) => live.has(e)));
     if (passes) expect(reasons).toContain('reported unsafe by travellers recently');
     // the safest route avoids the reported streets
     const safest = after.routes.reduce((a, b) => (b.meanRisk < a.meanRisk ? b : a));
-    expect(safest.edges.filter((e) => live.has(e)).length).toBeLessThanOrEqual(fast.edges.filter((e) => live.has(e)).length);
+    expect(safest.edges.filter((e) => live.has(e)).length).toBeLessThanOrEqual(
+      fast.edges.filter((e) => live.has(e)).length,
+    );
   });
 });
 
 describe('fastest time per mode and precautions', () => {
   it('TC-125 fastestTime gives a time for every mode, walking slowest', () => {
     const when = ist('18:00');
-    const t = (m: 'walk' | 'twowheeler' | 'auto' | 'car') => router.fastestTime(TRIPS.lajpatSoami.from, TRIPS.lajpatSoami.to, m, when, 'woman')!;
+    const t = (m: 'walk' | 'twowheeler' | 'auto' | 'car') =>
+      router.fastestTime(TRIPS.lajpatSoami.from, TRIPS.lajpatSoami.to, m, when, 'woman')!;
     expect(t('walk')).toBeGreaterThan(t('auto'));
     expect(t('walk')).toBeGreaterThan(t('car'));
     expect(t('twowheeler')).toBeGreaterThan(0);
-    const routed = router.route({ ...TRIPS.lajpatSoami, mode: 'walk', when, ctx: { when, profile: 'woman', pois } }).routes[0].timeS;
+    const routed = router.route({ ...TRIPS.lajpatSoami, mode: 'walk', when, ctx: { when, profile: 'woman', pois } })
+      .routes[0].timeS;
     expect(Math.abs(t('walk') - routed) / routed).toBeLessThan(0.05);
     expect(router.fastestTime([70, 20], TRIPS.lajpatSoami.to, 'walk', when, 'woman')).toBeNull();
   });
@@ -104,8 +133,16 @@ describe('fastest time per mode and precautions', () => {
       for (const s of r.dangerSpots.slice(0, 3)) expect(p.items.join('\n')).toContain(s.reasons[0] ?? 'quiet');
     }
     const day = ist('12:30');
-    const dres = router.route({ ...TRIPS.cpIndiaGate, mode: 'walk', when: day, ctx: { when: day, profile: 'woman', pois } });
+    const dres = router.route({
+      ...TRIPS.cpIndiaGate,
+      mode: 'walk',
+      when: day,
+      ctx: { when: day, profile: 'woman', pois },
+    });
     const green = dres.routes.find((r) => r.tier === 'green');
-    if (green) expect(routePrecautions(green, { mode: 'walk', profile: 'woman', when: day, pois }).headline).toMatch(/Busy|Mostly busy/);
+    if (green)
+      expect(routePrecautions(green, { mode: 'walk', profile: 'woman', when: day, pois }).headline).toMatch(
+        /Busy|Mostly busy/,
+      );
   });
 });

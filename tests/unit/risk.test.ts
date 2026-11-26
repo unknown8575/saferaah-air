@@ -4,7 +4,10 @@ import { ROAD_CLASSES, RC } from '../../shared/modes.ts';
 import { delhi, ist } from '../helpers.ts';
 
 const { g, pois } = delhi();
-const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+const median = (a: number[]) => {
+  const s = [...a].sort((x, y) => x - y);
+  return s[Math.floor(s.length / 2)];
+};
 
 describe('risk model (FR-5)', () => {
   const day = computeRisk(g, { when: ist('13:00'), profile: 'woman', pois });
@@ -17,13 +20,21 @@ describe('risk model (FR-5)', () => {
   });
 
   it('TC-11 at night main roads < lanes < footpaths', () => {
-    const by = (cls: string) => { const v: number[] = []; for (let e = 0; e < g.m; e++) if (ROAD_CLASSES[g.a.edgeClass[e]] === cls) v.push(night.risk[e]); return median(v); };
+    const by = (cls: string) => {
+      const v: number[] = [];
+      for (let e = 0; e < g.m; e++) if (ROAD_CLASSES[g.a.edgeClass[e]] === cls) v.push(night.risk[e]);
+      return median(v);
+    };
     expect(by('primary')).toBeLessThan(by('residential'));
     expect(by('residential')).toBeLessThan(by('footway'));
   });
 
   it('TC-12 open safe places lower risk', () => {
-    const closed = pois.map((p) => ({ ...p, oh: 'Mo 00:00-00:01', cat: p.cat === 'police' || p.cat === 'hospital' ? 'shop' as const : p.cat }));
+    const closed = pois.map((p) => ({
+      ...p,
+      oh: 'Mo 00:00-00:01',
+      cat: p.cat === 'police' || p.cat === 'hospital' ? ('shop' as const) : p.cat,
+    }));
     const r1 = computeRisk(g, { when: ist('20:00'), profile: 'woman', pois });
     const r2 = computeRisk(g, { when: ist('20:00'), profile: 'woman', pois: closed });
     let e = 0;
@@ -49,8 +60,14 @@ describe('risk model (FR-5)', () => {
     expect(crowdDanger({ n: MIN_REVIEWS_SAFE, mean: 5 })).toBeLessThan(0);
     const e = 1234;
     const base = computeRisk(g, { when: ist('23:00'), profile: 'woman', pois }).risk[e];
-    const warned = computeRisk(g, { when: ist('23:00'), profile: 'woman', pois, crowd: new Map([[e, { n: 8, mean: 1.5 }]]) }).risk[e];
-    const few = computeRisk(g, { when: ist('23:00'), profile: 'woman', pois, crowd: new Map([[e, { n: 3, mean: 1 }]]) }).risk[e];
+    const warned = computeRisk(g, {
+      when: ist('23:00'),
+      profile: 'woman',
+      pois,
+      crowd: new Map([[e, { n: 8, mean: 1.5 }]]),
+    }).risk[e];
+    const few = computeRisk(g, { when: ist('23:00'), profile: 'woman', pois, crowd: new Map([[e, { n: 3, mean: 1 }]]) })
+      .risk[e];
     expect(warned).toBeGreaterThan(base);
     expect(few).toBe(base);
   });

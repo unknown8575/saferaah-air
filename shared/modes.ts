@@ -1,29 +1,62 @@
 // Road classes, travel modes and per-mode speeds.
 
 export const ROAD_CLASSES = [
-  'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'unclassified',
-  'residential', 'living_street', 'service', 'pedestrian', 'footway',
-  'path', 'steps', 'track', 'cycleway', 'other',
+  'motorway',
+  'trunk',
+  'primary',
+  'secondary',
+  'tertiary',
+  'unclassified',
+  'residential',
+  'living_street',
+  'service',
+  'pedestrian',
+  'footway',
+  'path',
+  'steps',
+  'track',
+  'cycleway',
+  'other',
 ] as const;
 export type RoadClass = (typeof ROAD_CLASSES)[number];
-export const RC: Record<RoadClass, number> = Object.fromEntries(
-  ROAD_CLASSES.map((c, i) => [c, i]),
-) as Record<RoadClass, number>;
+export const RC: Record<RoadClass, number> = Object.fromEntries(ROAD_CLASSES.map((c, i) => [c, i])) as Record<
+  RoadClass,
+  number
+>;
 
 /** Map an OSM highway=* value to our road class (null = not routable). */
 export function roadClassOf(highway: string | undefined): RoadClass | null {
   if (!highway) return null;
   const h = highway.replace(/_link$/, '');
   switch (h) {
-    case 'motorway': case 'trunk': case 'primary': case 'secondary': case 'tertiary':
-    case 'unclassified': case 'residential': case 'living_street': case 'service':
-    case 'pedestrian': case 'footway': case 'path': case 'steps': case 'track': case 'cycleway':
+    case 'motorway':
+    case 'trunk':
+    case 'primary':
+    case 'secondary':
+    case 'tertiary':
+    case 'unclassified':
+    case 'residential':
+    case 'living_street':
+    case 'service':
+    case 'pedestrian':
+    case 'footway':
+    case 'path':
+    case 'steps':
+    case 'track':
+    case 'cycleway':
       return h;
-    case 'road': return 'unclassified';
-    case 'corridor': return 'footway';
-    case 'busway': case 'bus_stop': case 'construction': case 'proposed': case 'platform':
+    case 'road':
+      return 'unclassified';
+    case 'corridor':
+      return 'footway';
+    case 'busway':
+    case 'bus_stop':
+    case 'construction':
+    case 'proposed':
+    case 'platform':
       return null;
-    default: return null;
+    default:
+      return null;
   }
 }
 
@@ -53,11 +86,21 @@ export const F_ONEWAY_KNOWN = 8; // the source data carried oneway information a
 
 /** Typical urban Delhi speeds in km/h by road class for vehicles (before mode factor). */
 const VEHICLE_KMH: Partial<Record<RoadClass, number>> = {
-  motorway: 50, trunk: 34, primary: 26, secondary: 22, tertiary: 19,
-  unclassified: 16, residential: 14, living_street: 10, service: 10, track: 8,
+  motorway: 50,
+  trunk: 34,
+  primary: 26,
+  secondary: 22,
+  tertiary: 19,
+  unclassified: 16,
+  residential: 14,
+  living_street: 10,
+  service: 10,
+  track: 8,
 };
 const MODE_FACTOR: Record<Exclude<Mode, 'walk'>, number> = {
-  twowheeler: 1.1, auto: 0.85, car: 1.0,
+  twowheeler: 1.1,
+  auto: 0.85,
+  car: 1.0,
 };
 export const WALK_KMH = 4.6;
 

@@ -25,13 +25,23 @@ let loading: Promise<void> | null = null;
 let subSet = new Set<string>();
 
 export function loadPlaces(base: string): Promise<void> {
-  loading ??= fetch(base + 'data/places.json').then((r) => r.json()).then((d) => { data = d; subSet = new Set(d.subs); })
-    .catch(() => { loading = null; });
+  loading ??= fetch(base + 'data/places.json')
+    .then((r) => r.json())
+    .then((d) => {
+      data = d;
+      subSet = new Set(d.subs);
+    })
+    .catch(() => {
+      loading = null;
+    });
   return loading;
 }
 export const placesReady = () => !!data;
 /** for tests and for apps that ship the index another way */
-export function setPlaces(d: { subs: string[]; rows: Row[] }) { data = d; subSet = new Set(d.subs); }
+export function setPlaces(d: { subs: string[]; rows: Row[] }) {
+  data = d;
+  subSet = new Set(d.subs);
+}
 export const knownSubs = () => subSet;
 
 /**
@@ -39,12 +49,20 @@ export const knownSubs = () => subSet;
  * if fewer than `min`, fills up with similar kinds; if still short, looks further for
  * the exact kind.
  */
-export function nearbyFor(intent: Intent, at: LonLat, when: Date, opts: { min?: number; max?: number; radiusM?: number } = {}): BrowsePlace[] {
+export function nearbyFor(
+  intent: Intent,
+  at: LonLat,
+  when: Date,
+  opts: { min?: number; max?: number; radiusM?: number } = {},
+): BrowsePlace[] {
   if (!data) return [];
   const { min = 5, max = 7, radiusM = 5000 } = opts;
-  const exact = new Set(intent.exact), similar = new Set(intent.similar);
-  const ex: BrowsePlace[] = [], sim: BrowsePlace[] = [];
-  const dLat = 15000 / 111200, dLon = 15000 / (111200 * Math.cos((at[1] * Math.PI) / 180));
+  const exact = new Set(intent.exact),
+    similar = new Set(intent.similar);
+  const ex: BrowsePlace[] = [],
+    sim: BrowsePlace[] = [];
+  const dLat = 15000 / 111200,
+    dLon = 15000 / (111200 * Math.cos((at[1] * Math.PI) / 180));
   for (const r of data.rows) {
     const sub = data.subs[r[3]];
     const isEx = exact.has(sub);
@@ -52,8 +70,18 @@ export function nearbyFor(intent: Intent, at: LonLat, when: Date, opts: { min?: 
     if (Math.abs(r[1] - at[0]) > dLon || Math.abs(r[2] - at[1]) > dLat) continue;
     const distM = haversine(at[0], at[1], r[1], r[2]);
     const st = isOpenAt({ cat: kindCat(sub), oh: r[4] }, when);
-    const p: BrowsePlace = { name: r[0] || kindLabel(sub), label: kindLabel(sub), sub, lon: r[1], lat: r[2], oh: r[4], distM,
-      open: st.open, verified: st.verified, similar: !isEx };
+    const p: BrowsePlace = {
+      name: r[0] || kindLabel(sub),
+      label: kindLabel(sub),
+      sub,
+      lon: r[1],
+      lat: r[2],
+      oh: r[4],
+      distM,
+      open: st.open,
+      verified: st.verified,
+      similar: !isEx,
+    };
     (isEx ? ex : sim).push(p);
   }
   ex.sort((a, b) => a.distM - b.distM);

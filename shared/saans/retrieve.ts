@@ -8,21 +8,76 @@
 import { NOTES, type Cluster, type Note } from './knowledge.ts';
 
 const SYN: Record<string, string> = {
-  bachche: 'children', bacche: 'children', baccha: 'child', bachcha: 'child', bacha: 'child', kids: 'children', kid: 'child',
-  saans: 'breath', sans: 'breath', khansi: 'cough', gala: 'throat', aankh: 'eyes', dama: 'asthma',
-  dhuan: 'smoke', dhua: 'smoke', dhuaan: 'smoke', hawa: 'air', ghar: 'home', kamra: 'room', khidki: 'window',
-  khana: 'cooking', khaana: 'cooking', rasoi: 'kitchen', jhadu: 'sweep', pocha: 'mop', kooda: 'garbage', kachra: 'garbage',
-  patakhe: 'firecrackers', parali: 'stubble', subah: 'morning', shaam: 'evening', raat: 'night', aaj: 'today', kal: 'tomorrow',
-  bahar: 'outside', andar: 'indoors', school: 'school', dadi: 'elderly', nani: 'elderly', dada: 'elderly', nana: 'elderly',
-  buzurg: 'elderly', parents: 'elderly', gaadi: 'car', scooty: 'twowheeler', bike: 'twowheeler', paudhe: 'plants', ped: 'plants',
-  machine: 'purifier', purifiers: 'purifier', masks: 'mask', walks: 'walk', walking: 'walk', jogging: 'run', running: 'run',
+  bachche: 'children',
+  bacche: 'children',
+  baccha: 'child',
+  bachcha: 'child',
+  bacha: 'child',
+  kids: 'children',
+  kid: 'child',
+  saans: 'breath',
+  sans: 'breath',
+  khansi: 'cough',
+  gala: 'throat',
+  aankh: 'eyes',
+  dama: 'asthma',
+  dhuan: 'smoke',
+  dhua: 'smoke',
+  dhuaan: 'smoke',
+  hawa: 'air',
+  ghar: 'home',
+  kamra: 'room',
+  khidki: 'window',
+  khana: 'cooking',
+  khaana: 'cooking',
+  rasoi: 'kitchen',
+  jhadu: 'sweep',
+  pocha: 'mop',
+  kooda: 'garbage',
+  kachra: 'garbage',
+  patakhe: 'firecrackers',
+  parali: 'stubble',
+  subah: 'morning',
+  shaam: 'evening',
+  raat: 'night',
+  aaj: 'today',
+  kal: 'tomorrow',
+  bahar: 'outside',
+  andar: 'indoors',
+  school: 'school',
+  dadi: 'elderly',
+  nani: 'elderly',
+  dada: 'elderly',
+  nana: 'elderly',
+  buzurg: 'elderly',
+  parents: 'elderly',
+  gaadi: 'car',
+  scooty: 'twowheeler',
+  bike: 'twowheeler',
+  paudhe: 'plants',
+  ped: 'plants',
+  machine: 'purifier',
+  purifiers: 'purifier',
+  masks: 'mask',
+  walks: 'walk',
+  walking: 'walk',
+  jogging: 'run',
+  running: 'run',
 };
-const STOP = new Set(('a an the is are was be to of in on for and or with at by it this that my our me we i you your do does can ' +
-  'should what which how when where why kya hai hain ka ki ke ko se me mein aur ya kaise kab kahan kitna kitni please tell').split(' '));
+const STOP = new Set(
+  (
+    'a an the is are was be to of in on for and or with at by it this that my our me we i you your do does can ' +
+    'should what which how when where why kya hai hain ka ki ke ko se me mein aur ya kaise kab kahan kitna kitni please tell'
+  ).split(' '),
+);
 
 export function tokens(s: string): string[] {
   const out: string[] = [];
-  for (let w of s.toLowerCase().replace(/pm\s*2\.?5/g, 'pm25').replace(/[^a-z0-9₂ ]+/g, ' ').split(/\s+/)) {
+  for (let w of s
+    .toLowerCase()
+    .replace(/pm\s*2\.?5/g, 'pm25')
+    .replace(/[^a-z0-9₂ ]+/g, ' ')
+    .split(/\s+/)) {
     if (!w || STOP.has(w)) continue;
     w = SYN[w] ?? w;
     if (w.length > 4 && w.endsWith('ing')) w = w.slice(0, -3);
@@ -33,8 +88,13 @@ export function tokens(s: string): string[] {
   return out;
 }
 
-interface Doc { note: Note; tf: Map<string, number>; len: number }
-const K1 = 1.2, B = 0.75;
+interface Doc {
+  note: Note;
+  tf: Map<string, number>;
+  len: number;
+}
+const K1 = 1.2,
+  B = 0.75;
 
 export class NoteIndex {
   private docs: Doc[];
@@ -43,7 +103,13 @@ export class NoteIndex {
   constructor(notes: Note[] = NOTES) {
     this.docs = notes.map((note) => {
       // the title and tags count twice: they say what a note is about
-      const toks = [...tokens(note.title), ...tokens(note.title), ...tokens(note.text), ...tokens(note.tags), ...tokens(note.tags)];
+      const toks = [
+        ...tokens(note.title),
+        ...tokens(note.title),
+        ...tokens(note.text),
+        ...tokens(note.tags),
+        ...tokens(note.tags),
+      ];
       const tf = new Map<string, number>();
       for (const t of toks) tf.set(t, (tf.get(t) ?? 0) + 1);
       for (const t of tf.keys()) this.df.set(t, (this.df.get(t) ?? 0) + 1);
@@ -71,8 +137,13 @@ export class NoteIndex {
   clusterOf(q: string, scores = this.bm25(q)): Cluster | null {
     const sum = new Map<Cluster, number>();
     this.docs.forEach((d, i) => sum.set(d.note.cluster, (sum.get(d.note.cluster) ?? 0) + scores[i] ** 2));
-    let best: Cluster | null = null, bv = 0;
-    for (const [c, v] of sum) if (v > bv) { bv = v; best = c; }
+    let best: Cluster | null = null,
+      bv = 0;
+    for (const [c, v] of sum)
+      if (v > bv) {
+        bv = v;
+        best = c;
+      }
     return best;
   }
 
@@ -92,14 +163,25 @@ export class NoteIndex {
     });
     const best = Math.max(...scored.map((x) => x.score), 0);
     // keep only notes that are clearly about the question (not a stray shared word)
-    return scored.filter((x) => x.score > 0.05 && x.score >= 0.35 * best).sort((a, b) => b.score - a.score).slice(0, k);
+    return scored
+      .filter((x) => x.score > 0.05 && x.score >= 0.35 * best)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, k);
   }
 
-  get notes(): Note[] { return this.docs.map((d) => d.note); }
+  get notes(): Note[] {
+    return this.docs.map((d) => d.note);
+  }
 }
 
 export function cosine(a: ArrayLike<number>, b: ArrayLike<number>): number {
-  let d = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) { d += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  let d = 0,
+    na = 0,
+    nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    d += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
   return na && nb ? d / Math.sqrt(na * nb) : 0;
 }

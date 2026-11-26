@@ -1,23 +1,69 @@
 // Offline place search over search.json: [name, lon, lat, type][]
 export type Entry = [string, number, number, string];
-export interface Hit { name: string; lon: number; lat: number; type: string; score: number }
+export interface Hit {
+  name: string;
+  lon: number;
+  lat: number;
+  type: string;
+  score: number;
+}
 
-const norm = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N} ]+/gu, ' ').replace(/\s+/g, ' ').trim();
+const norm = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\p{L}\p{N} ]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 const TYPE_BOOST: Record<string, number> = {
-  station: 0.6, suburb: 0.55, landmark: 0.55, neighbourhood: 0.5, market: 0.45, quarter: 0.45, police: 0.4, hospital: 0.4, attraction: 0.3, park: 0.3, school: 0.25,
-  locality: 0.35, hotel: 0.1, street: 0.05,
+  station: 0.6,
+  suburb: 0.55,
+  landmark: 0.55,
+  neighbourhood: 0.5,
+  market: 0.45,
+  quarter: 0.45,
+  police: 0.4,
+  hospital: 0.4,
+  attraction: 0.3,
+  park: 0.3,
+  school: 0.25,
+  locality: 0.35,
+  hotel: 0.1,
+  street: 0.05,
 };
 export const TYPE_ICON: Record<string, string> = {
-  station: '🚇', police: '👮', hospital: '🏥', clinic: '🩺', pharmacy: '💊', street: '🛣️', shop: '🛍️', food: '🍽️',
-  hotel: '🏨', fuel: '⛽', bank: '🏦', atm: '🏧', worship: '🛕', govt: '🏛️', liquor: '🍺',
-  landmark: '🏛️', park: '🌳', market: '🛍️', school: '🏫', office: '🏢', suburb: '📍', neighbourhood: '📍',
+  station: '🚇',
+  police: '👮',
+  hospital: '🏥',
+  clinic: '🩺',
+  pharmacy: '💊',
+  street: '🛣️',
+  shop: '🛍️',
+  food: '🍽️',
+  hotel: '🏨',
+  fuel: '⛽',
+  bank: '🏦',
+  atm: '🏧',
+  worship: '🛕',
+  govt: '🏛️',
+  liquor: '🍺',
+  landmark: '🏛️',
+  park: '🌳',
+  market: '🛍️',
+  school: '🏫',
+  office: '🏢',
+  suburb: '📍',
+  neighbourhood: '📍',
 };
 
 export class PlaceSearch {
   private items: { e: Entry; n: string; words: string[] }[];
   constructor(entries: Entry[]) {
-    this.items = entries.map((e) => { const n = norm(e[0]); return { e, n, words: n.split(' ') }; });
+    this.items = entries.map((e) => {
+      const n = norm(e[0]);
+      return { e, n, words: n.split(' ') };
+    });
   }
   query(q: string, limit = 8, near?: [number, number]): Hit[] {
     const nq = norm(q);
@@ -43,7 +89,8 @@ export class PlaceSearch {
     // de-duplicate same name within ~300 m
     const res: Hit[] = [];
     for (const h of out) {
-      if (res.some((r) => r.name === h.name && Math.abs(r.lon - h.lon) < 0.003 && Math.abs(r.lat - h.lat) < 0.003)) continue;
+      if (res.some((r) => r.name === h.name && Math.abs(r.lon - h.lon) < 0.003 && Math.abs(r.lat - h.lat) < 0.003))
+        continue;
       res.push(h);
       if (res.length >= limit) break;
     }

@@ -20,19 +20,33 @@ function nativeSource(): PositionSource {
   let watcher: string | null = null;
   return {
     start(onFix, onError) {
-      BG.addWatcher({
-        backgroundTitle: 'SafeRaah is watching your journey',
-        backgroundMessage: 'We will tell your contacts when you arrive. Open the app for SOS.',
-        requestPermissions: true, stale: false, distanceFilter: 5,
-      }, (loc, err) => {
-        if (err) {
-          onError(err.code === 'NOT_AUTHORIZED' ? 'Location permission is off. Turn it on in Settings to track the journey.' : 'Location is not available right now.');
-          return;
-        }
-        if (loc) onFix({ lon: loc.longitude, lat: loc.latitude, acc: loc.accuracy, t: loc.time ?? Date.now() });
-      }).then((id) => { watcher = id; });
+      BG.addWatcher(
+        {
+          backgroundTitle: 'SafeRaah is watching your journey',
+          backgroundMessage: 'We will tell your contacts when you arrive. Open the app for SOS.',
+          requestPermissions: true,
+          stale: false,
+          distanceFilter: 5,
+        },
+        (loc, err) => {
+          if (err) {
+            onError(
+              err.code === 'NOT_AUTHORIZED'
+                ? 'Location permission is off. Turn it on in Settings to track the journey.'
+                : 'Location is not available right now.',
+            );
+            return;
+          }
+          if (loc) onFix({ lon: loc.longitude, lat: loc.latitude, acc: loc.accuracy, t: loc.time ?? Date.now() });
+        },
+      ).then((id) => {
+        watcher = id;
+      });
     },
-    stop() { if (watcher) BG.removeWatcher({ id: watcher }); watcher = null; },
+    stop() {
+      if (watcher) BG.removeWatcher({ id: watcher });
+      watcher = null;
+    },
   };
 }
 
@@ -45,16 +59,27 @@ function webSource(): PositionSource {
   let id: number | null = null;
   return {
     start(onFix, onError) {
-      if (!('geolocation' in navigator)) { onError('This device has no location service.'); return; }
+      if (!('geolocation' in navigator)) {
+        onError('This device has no location service.');
+        return;
+      }
       let lastFixAt = Date.now();
       let warnedAt = 0;
       id = navigator.geolocation.watchPosition(
         (p) => {
           lastFixAt = Date.now();
-          onFix({ lon: p.coords.longitude, lat: p.coords.latitude, acc: p.coords.accuracy, t: p.timestamp || Date.now() });
+          onFix({
+            lon: p.coords.longitude,
+            lat: p.coords.latitude,
+            acc: p.coords.accuracy,
+            t: p.timestamp || Date.now(),
+          });
         },
         (e) => {
-          if (e.code === 1) { onError('Location permission is off. Turn it on to track the journey.'); return; }
+          if (e.code === 1) {
+            onError('Location permission is off. Turn it on to track the journey.');
+            return;
+          }
           // Slow fixes are normal between tall buildings; only speak up after a full minute
           // without any position, and not more than once a minute.
           const now = Date.now();
@@ -66,7 +91,10 @@ function webSource(): PositionSource {
         { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 },
       );
     },
-    stop() { if (id !== null) navigator.geolocation.clearWatch(id); id = null; },
+    stop() {
+      if (id !== null) navigator.geolocation.clearWatch(id);
+      id = null;
+    },
   };
 }
 
@@ -74,15 +102,23 @@ function webSource(): PositionSource {
  * Simulated traveller along `route` at `speedMps`, `speedup`× faster than real time.
  * Optional pause (to demo the "Are you OK?" check-in) at a fraction of the route.
  */
-export function simulatedSource(route: LonLat[], speedMps: number, speedup = 20,
-  pause?: { atFrac: number; seconds: number }): PositionSource {
+export function simulatedSource(
+  route: LonLat[],
+  speedMps: number,
+  speedup = 20,
+  pause?: { atFrac: number; seconds: number },
+): PositionSource {
   let timer: ReturnType<typeof setInterval> | null = null;
   return {
     start(onFix) {
       const cum = [0];
-      for (let i = 1; i < route.length; i++) cum.push(cum[i - 1] + haversine(route[i - 1][0], route[i - 1][1], route[i][0], route[i][1]));
+      for (let i = 1; i < route.length; i++)
+        cum.push(cum[i - 1] + haversine(route[i - 1][0], route[i - 1][1], route[i][0], route[i][1]));
       const total = cum[cum.length - 1];
-      let simT = Date.now(), dist = 0, paused = 0, pausedDone = false;
+      let simT = Date.now(),
+        dist = 0,
+        paused = 0,
+        pausedDone = false;
       const tickMs = 250;
       const emit = () => {
         let i = 1;
@@ -104,9 +140,15 @@ export function simulatedSource(route: LonLat[], speedMps: number, speedup = 20,
           dist = Math.min(total, dist + speedMps * dtS);
         }
         emit();
-        if (dist >= total) { if (timer) clearInterval(timer); timer = null; }
+        if (dist >= total) {
+          if (timer) clearInterval(timer);
+          timer = null;
+        }
       }, tickMs);
     },
-    stop() { if (timer) clearInterval(timer); timer = null; },
+    stop() {
+      if (timer) clearInterval(timer);
+      timer = null;
+    },
   };
 }

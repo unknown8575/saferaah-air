@@ -31,7 +31,13 @@ describe('search by kind of place', () => {
   });
   it('TC-142 when the exact kind is not nearby, similar places fill the list', () => {
     // swimming pools are rare: a request for them falls back to similar sports places
-    const rare = { title: 'Pools', one: 'pool', exact: ['swimming_pool'], similar: ['fitness_centre', 'sports_centre'], words: [] };
+    const rare = {
+      title: 'Pools',
+      one: 'pool',
+      exact: ['swimming_pool'],
+      similar: ['fitness_centre', 'sports_centre'],
+      words: [],
+    };
     const res = nearbyFor(rare, CP, ist('19:00'));
     expect(res.length).toBeGreaterThanOrEqual(5);
     expect(res.some((p) => p.similar)).toBe(true);

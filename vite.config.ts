@@ -7,14 +7,29 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 function csp(apiBase: string): Plugin {
   const api = apiBase ? new URL(apiBase).origin : '';
   const policy = [
-    "default-src 'self'", "script-src 'self'", "worker-src 'self' blob:", "child-src 'self' blob:",
-    "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob: https://api.tomtom.com", "font-src 'self' data:",
-    `connect-src 'self' ${api} https://air-quality-api.open-meteo.com https://api.open-meteo.com https://api.tomtom.com`.replace(/\s+/g, ' '),
-    "manifest-src 'self'", "object-src 'none'", "base-uri 'self'", "form-action 'self'",
+    "default-src 'self'",
+    "script-src 'self'",
+    "worker-src 'self' blob:",
+    "child-src 'self' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https://api.tomtom.com",
+    "font-src 'self' data:",
+    `connect-src 'self' ${api} https://air-quality-api.open-meteo.com https://api.open-meteo.com https://api.tomtom.com`.replace(
+      /\s+/g,
+      ' ',
+    ),
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
   ].join('; ');
   return {
     name: 'saferaah-csp',
-    transformIndexHtml: (html) => html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n  <meta http-equiv="Content-Security-Policy" content="${policy}" />`),
+    transformIndexHtml: (html) =>
+      html.replace(
+        '<meta charset="utf-8" />',
+        `<meta charset="utf-8" />\n  <meta http-equiv="Content-Security-Policy" content="${policy}" />`,
+      ),
   };
 }
 

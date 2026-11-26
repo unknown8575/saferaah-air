@@ -37,13 +37,19 @@ export function arrivalText(name: string, place: string, time: string): string {
 }
 
 export function startText(name: string, place: string, eta: string, link?: string): string {
-  return `${name || 'I'} started a trip to ${place || 'my destination'}, expected by ${eta}.` +
-    (link ? ` Follow live: ${link}` : '') + ' (SafeRaah)';
+  return (
+    `${name || 'I'} started a trip to ${place || 'my destination'}, expected by ${eta}.` +
+    (link ? ` Follow live: ${link}` : '') +
+    ' (SafeRaah)'
+  );
 }
 
 export function sosText(name: string, lon: number, lat: number, link?: string): string {
-  return `SOS from ${name || 'me'}: I need help. My location: ${mapsLink(lon, lat)}` +
-    (link ? ` Live trip: ${link}` : '') + ' Call me or 112 now.';
+  return (
+    `SOS from ${name || 'me'}: I need help. My location: ${mapsLink(lon, lat)}` +
+    (link ? ` Live trip: ${link}` : '') +
+    ' Call me or 112 now.'
+  );
 }
 
 export const HELPLINES = [

@@ -2,19 +2,25 @@
 type Child = Node | string | number | null | undefined | false | Child[];
 type Attrs = Record<string, unknown> & { on?: Record<string, (e: any) => void> };
 
-export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs | null = null, ...kids: Child[]): HTMLElementTagNameMap[K] {
+export function h<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  attrs: Attrs | null = null,
+  ...kids: Child[]
+): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
-  if (attrs) for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'on') for (const [ev, fn] of Object.entries(v as Record<string, (e: Event) => void>)) el.addEventListener(ev, fn);
-    else if (k === 'class') el.className = String(v);
-    else if (k === 'style' && typeof v === 'object') {
-      for (const [sk, sv] of Object.entries(v as Record<string, string>)) {
-        if (sk.startsWith('--')) el.style.setProperty(sk, sv); else (el.style as unknown as Record<string, string>)[sk] = sv;
-      }
+  if (attrs)
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'on')
+        for (const [ev, fn] of Object.entries(v as Record<string, (e: Event) => void>)) el.addEventListener(ev, fn);
+      else if (k === 'class') el.className = String(v);
+      else if (k === 'style' && typeof v === 'object') {
+        for (const [sk, sv] of Object.entries(v as Record<string, string>)) {
+          if (sk.startsWith('--')) el.style.setProperty(sk, sv);
+          else (el.style as unknown as Record<string, string>)[sk] = sv;
+        }
+      } else if (v === true) el.setAttribute(k, '');
+      else if (v !== false && v != null) el.setAttribute(k, String(v));
     }
-    else if (v === true) el.setAttribute(k, '');
-    else if (v !== false && v != null) el.setAttribute(k, String(v));
-  }
   append(el, kids);
   return el;
 }

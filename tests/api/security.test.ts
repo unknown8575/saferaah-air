@@ -16,7 +16,8 @@ mkdirSync(join(dir, 'dist-secret'));
 writeFileSync(join(root, 'index.html'), '<!doctype html><title>app</title>' + 'x'.repeat(2000));
 writeFileSync(join(dir, 'dist-secret', 'key.txt'), 'top secret');
 
-let server: Server, port = 0;
+let server: Server,
+  port = 0;
 beforeAll(async () => {
   server = createApp({ db: openDb(':memory:'), graphVersion: 'test', staticDir: root });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -25,7 +26,10 @@ beforeAll(async () => {
 afterAll(() => server.close());
 
 /** raw request, so the path is sent exactly as written (fetch would normalise "..") */
-function raw(path: string, headers: Record<string, string> = {}): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }> {
+function raw(
+  path: string,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }> {
   return new Promise((res, rej) => {
     const r = request({ host: '127.0.0.1', port, path, headers }, (m) => {
       let body = '';

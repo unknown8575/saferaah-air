@@ -38,7 +38,12 @@ describe('opening hours (FR-7)', () => {
     expect(isOpenAt(pharmacy, ist('10:00', '2026-11-08')).open).toBe(false); // Sunday
   });
   it('TC-04 tolerates public-holiday (PH) rules', () => {
-    for (const oh of ['Mo-Su,PH 09:00-23:00', 'Mo-Sa 10:00-20:00; PH off', 'Mo-Fr 10:00-17:00; Su closed PH closed', 'PH,Mo-Su 08:00-22:00']) {
+    for (const oh of [
+      'Mo-Su,PH 09:00-23:00',
+      'Mo-Sa 10:00-20:00; PH off',
+      'Mo-Fr 10:00-17:00; Su closed PH closed',
+      'PH,Mo-Su 08:00-22:00',
+    ]) {
       const s = isOpenAt({ cat: 'shop', oh }, ist('12:00'));
       expect(s.verified).toBe(true);
       expect(s.open).toBe(true);

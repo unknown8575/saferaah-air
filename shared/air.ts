@@ -22,11 +22,20 @@ export interface AirArrays {
   /** named industrial area / landfill index, -1 = none */
   area: Int16Array;
 }
-export interface AirMeta { areas: string[]; cellM: number; source: string }
+export interface AirMeta {
+  areas: string[];
+  cellM: number;
+  source: string;
+}
 /** metres per stored unit */
 export const AIR_CAP = { ind: 10, maj: 4, dump: 20 } as const;
 
-const ORDER: [keyof AirArrays, 'u8' | 'i16'][] = [['indM', 'u8'], ['majM', 'u8'], ['dumpM', 'u8'], ['area', 'i16']];
+const ORDER: [keyof AirArrays, 'u8' | 'i16'][] = [
+  ['indM', 'u8'],
+  ['majM', 'u8'],
+  ['dumpM', 'u8'],
+  ['area', 'i16'],
+];
 
 export function encodeAir(a: AirArrays, meta: AirMeta): Uint8Array {
   let off = 0;
@@ -54,22 +63,33 @@ export class AirField {
   readonly meta: AirMeta;
   constructor(buf: ArrayBuffer | Uint8Array) {
     const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-    if (bytes[0] !== 0x53 || bytes[1] !== 0x52 || bytes[2] !== 0x41 || bytes[3] !== 0x31) throw new Error('Not a SafeRaah air file');
+    if (bytes[0] !== 0x53 || bytes[1] !== 0x52 || bytes[2] !== 0x41 || bytes[3] !== 0x31)
+      throw new Error('Not a SafeRaah air file');
     const hlen = new DataView(bytes.buffer, bytes.byteOffset).getUint32(4, true);
     const head = JSON.parse(new TextDecoder().decode(bytes.subarray(8, 8 + hlen)));
     const base = Math.ceil((8 + hlen) / 8) * 8;
     const body = Uint8Array.prototype.slice.call(bytes, base).buffer as ArrayBuffer;
     const a: Partial<AirArrays> = {};
     for (const e of head.arrays as { name: keyof AirArrays; offset: number; length: number }[]) {
-      (a as Record<string, unknown>)[e.name] = e.name === 'area' ? new Int16Array(body, e.offset, e.length) : new Uint8Array(body, e.offset, e.length);
+      (a as Record<string, unknown>)[e.name] =
+        e.name === 'area' ? new Int16Array(body, e.offset, e.length) : new Uint8Array(body, e.offset, e.length);
     }
     this.a = a as AirArrays;
     this.meta = head.meta;
   }
-  indM(e: number) { return this.a.indM[e] * AIR_CAP.ind; }
-  majM(e: number) { return this.a.majM[e] * AIR_CAP.maj; }
-  dumpM(e: number) { return this.a.dumpM[e] * AIR_CAP.dump; }
-  areaName(e: number): string { const k = this.a.area[e]; return k >= 0 ? this.meta.areas[k] ?? '' : ''; }
+  indM(e: number) {
+    return this.a.indM[e] * AIR_CAP.ind;
+  }
+  majM(e: number) {
+    return this.a.majM[e] * AIR_CAP.maj;
+  }
+  dumpM(e: number) {
+    return this.a.dumpM[e] * AIR_CAP.dump;
+  }
+  areaName(e: number): string {
+    const k = this.a.area[e];
+    return k >= 0 ? (this.meta.areas[k] ?? '') : '';
+  }
   /** Build a field from plain arrays (tests). */
   static from(a: AirArrays, areas: string[] = []): AirField {
     const f = Object.create(AirField.prototype) as AirField;
@@ -81,8 +101,16 @@ export class AirField {
 // ---------------------------------------------------------------- street factor
 /** How much dirtier than the city background the air on this kind of road is. */
 const ROAD_FACTOR: Partial<Record<(typeof ROAD_CLASSES)[number], number>> = {
-  motorway: 1.6, trunk: 1.55, primary: 1.45, secondary: 1.3, tertiary: 1.12,
-  pedestrian: 0.95, footway: 0.95, path: 0.92, cycleway: 0.95, track: 0.95,
+  motorway: 1.6,
+  trunk: 1.55,
+  primary: 1.45,
+  secondary: 1.3,
+  tertiary: 1.12,
+  pedestrian: 0.95,
+  footway: 0.95,
+  path: 0.92,
+  cycleway: 0.95,
+  track: 0.95,
 };
 
 export interface AirSources {
@@ -143,11 +171,36 @@ export function doseUg(pm25: number, factor: number, seconds: number, mode: Mode
 export type AqiBand = 'good' | 'satisfactory' | 'moderate' | 'poor' | 'verypoor' | 'severe';
 export const AQI_BANDS: Record<AqiBand, { label: string; color: string; range: [number, number]; advice: string }> = {
   good: { label: 'Good', color: '#30b158', range: [0, 50], advice: 'Air is fine. A good time to be outside.' },
-  satisfactory: { label: 'Satisfactory', color: '#8cc63f', range: [51, 100], advice: 'Fine for most people; sensitive people may feel minor discomfort.' },
-  moderate: { label: 'Moderate', color: '#ffcc00', range: [101, 200], advice: 'Children, elders and people with asthma should keep long outdoor effort short.' },
-  poor: { label: 'Poor', color: '#ff9f0a', range: [201, 300], advice: 'Most people feel it on long exposure. Avoid outdoor exercise; take quieter streets.' },
-  verypoor: { label: 'Very poor', color: '#ff3b30', range: [301, 400], advice: 'Unhealthy for everyone. Stay indoors when you can; wear an N95 outside.' },
-  severe: { label: 'Severe', color: '#a3161f', range: [401, 500], advice: 'Hazardous. Avoid going out; keep windows shut and run a purifier.' },
+  satisfactory: {
+    label: 'Satisfactory',
+    color: '#8cc63f',
+    range: [51, 100],
+    advice: 'Fine for most people; sensitive people may feel minor discomfort.',
+  },
+  moderate: {
+    label: 'Moderate',
+    color: '#ffcc00',
+    range: [101, 200],
+    advice: 'Children, elders and people with asthma should keep long outdoor effort short.',
+  },
+  poor: {
+    label: 'Poor',
+    color: '#ff9f0a',
+    range: [201, 300],
+    advice: 'Most people feel it on long exposure. Avoid outdoor exercise; take quieter streets.',
+  },
+  verypoor: {
+    label: 'Very poor',
+    color: '#ff3b30',
+    range: [301, 400],
+    advice: 'Unhealthy for everyone. Stay indoors when you can; wear an N95 outside.',
+  },
+  severe: {
+    label: 'Severe',
+    color: '#a3161f',
+    range: [401, 500],
+    advice: 'Hazardous. Avoid going out; keep windows shut and run a purifier.',
+  },
 };
 const BAND_ORDER: AqiBand[] = ['good', 'satisfactory', 'moderate', 'poor', 'verypoor', 'severe'];
 // concentration breakpoints (µg/m³, 24-h) matching the AQI ranges above
@@ -196,7 +249,11 @@ export function bandOf(aqi: number): AqiBand {
 }
 
 // ---------------------------------------------------------------- forecast
-export interface AirHour { time: string; pm25: number; pm10: number }
+export interface AirHour {
+  time: string;
+  pm25: number;
+  pm10: number;
+}
 export interface AirNow {
   at: string;
   /** this hour's concentrations (µg/m³) */
@@ -222,7 +279,8 @@ export function parseOpenMeteo(j: any, now: Date = new Date()): AirNow | null {
   const off = (j?.utc_offset_seconds ?? 19800) * 1000;
   const hours: AirHour[] = [];
   for (let i = 0; i < t.length; i++) {
-    const a = p25[i], b = p10[i];
+    const a = p25[i],
+      b = p10[i];
     if (!valid(a) || !valid(b)) continue;
     hours.push({ time: t[i], pm25: a, pm10: b });
   }
@@ -231,7 +289,9 @@ export function parseOpenMeteo(j: any, now: Date = new Date()): AirNow | null {
   const localNow = new Date(now.getTime() + off).toISOString().slice(0, 13);
   let i = hours.findIndex((h) => h.time.slice(0, 13) >= localNow);
   if (i < 0) i = hours.length - 1;
-  const cur = valid(j?.current?.pm2_5) ? { pm25: j.current.pm2_5 as number, pm10: valid(j.current.pm10) ? j.current.pm10 as number : hours[i].pm10 } : hours[i];
+  const cur = valid(j?.current?.pm2_5)
+    ? { pm25: j.current.pm2_5 as number, pm10: valid(j.current.pm10) ? (j.current.pm10 as number) : hours[i].pm10 }
+    : hours[i];
   // CPCB: PM2.5 / PM10 sub-indices use 24-hour averages, valid with at least 16 hours of data
   const past = hours.slice(Math.max(0, i - 23), i + 1);
   const avg = (k: 'pm25' | 'pm10') => past.reduce((s, h) => s + h[k], 0) / past.length;
@@ -239,7 +299,8 @@ export function parseOpenMeteo(j: any, now: Date = new Date()): AirNow | null {
   const avg24 = has24 ? { pm25: avg('pm25'), pm10: avg('pm10'), hours: past.length } : undefined;
   return {
     at: hours[i].time,
-    pm25: cur.pm25, pm10: cur.pm10,
+    pm25: cur.pm25,
+    pm10: cur.pm10,
     aqi: (has24 ? aqiFrom(avg24!.pm25, avg24!.pm10, '24h') : aqiFrom(cur.pm25, cur.pm10, 'hourly'))!,
     avg24,
     hours: hours.slice(i, i + 24),
@@ -283,16 +344,35 @@ export function smogOf(h: WeatherHour): Weather['smog'] {
   let score = 0;
   // normal lapse rate: ~750 m up is 4–7 °C colder; less than 1.5 °C colder means an inversion / very stable air
   const inversion = h.tempC !== null && h.temp925C !== null && h.temp925C > h.tempC - 1.5;
-  if (inversion) { score += 2; reasons.push('temperature inversion: warm air above traps smoke near the ground'); }
+  if (inversion) {
+    score += 2;
+    reasons.push('temperature inversion: warm air above traps smoke near the ground');
+  }
   if (h.blhM !== null) {
-    if (h.blhM < 300) { score += 2; reasons.push(`very shallow mixing layer (~${Math.round(h.blhM / 10) * 10} m)`); }
-    else if (h.blhM < 700) { score += 1; reasons.push(`shallow mixing layer (~${Math.round(h.blhM / 10) * 10} m)`); }
+    if (h.blhM < 300) {
+      score += 2;
+      reasons.push(`very shallow mixing layer (~${Math.round(h.blhM / 10) * 10} m)`);
+    } else if (h.blhM < 700) {
+      score += 1;
+      reasons.push(`shallow mixing layer (~${Math.round(h.blhM / 10) * 10} m)`);
+    }
   }
   const stagnant = h.windMs !== null && h.windMs < 1.5;
-  if (stagnant) { score += 2; reasons.push('almost no wind'); }
-  else if (h.windMs !== null && h.windMs < 3) { score += 1; reasons.push('light wind'); }
-  if (h.humidity !== null && h.humidity > 80) { score += 1; reasons.push('humid air helps particles grow'); }
-  if (h.visibilityM !== null && h.visibilityM < 1500) { score += 1; reasons.push(`poor visibility (${(h.visibilityM / 1000).toFixed(1)} km)`); }
+  if (stagnant) {
+    score += 2;
+    reasons.push('almost no wind');
+  } else if (h.windMs !== null && h.windMs < 3) {
+    score += 1;
+    reasons.push('light wind');
+  }
+  if (h.humidity !== null && h.humidity > 80) {
+    score += 1;
+    reasons.push('humid air helps particles grow');
+  }
+  if (h.visibilityM !== null && h.visibilityM < 1500) {
+    score += 1;
+    reasons.push(`poor visibility (${(h.visibilityM / 1000).toFixed(1)} km)`);
+  }
   const level: SmogLevel = score >= 6 ? 'severe' : score >= 4 ? 'high' : score >= 2 ? 'moderate' : 'low';
   return { level, inversion, stagnant, reasons };
 }
@@ -304,9 +384,13 @@ export function parseWeather(j: any, now: Date = new Date()): Weather | null {
   if (!t.length) return null;
   const hours: WeatherHour[] = t.map((time, k) => ({
     time,
-    tempC: num(H.temperature_2m?.[k]), humidity: num(H.relative_humidity_2m?.[k]),
-    windMs: num(H.wind_speed_10m?.[k]), windDir: num(H.wind_direction_10m?.[k]),
-    visibilityM: num(H.visibility?.[k]), blhM: num(H.boundary_layer_height?.[k]), temp925C: num(H.temperature_925hPa?.[k]),
+    tempC: num(H.temperature_2m?.[k]),
+    humidity: num(H.relative_humidity_2m?.[k]),
+    windMs: num(H.wind_speed_10m?.[k]),
+    windDir: num(H.wind_direction_10m?.[k]),
+    visibilityM: num(H.visibility?.[k]),
+    blhM: num(H.boundary_layer_height?.[k]),
+    temp925C: num(H.temperature_925hPa?.[k]),
   }));
   const off = (j?.utc_offset_seconds ?? 19800) * 1000;
   const localNow = new Date(now.getTime() + off).toISOString().slice(0, 13);
@@ -333,7 +417,10 @@ export function parseSensors(list: any[]): { pm25: number; sensors: number; sour
     if (seen.has(id)) continue;
     for (const v of s?.sensordatavalues ?? []) {
       const x = Number(v?.value);
-      if (v?.value_type === 'P2' && Number.isFinite(x) && x > 0 && x < 1000) { vals.push(x); seen.add(id); }
+      if (v?.value_type === 'P2' && Number.isFinite(x) && x > 0 && x < 1000) {
+        vals.push(x);
+        seen.add(id);
+      }
     }
   }
   if (vals.length < 2) return null;
@@ -344,7 +431,12 @@ export function parseSensors(list: any[]): { pm25: number; sensors: number; sour
 }
 
 /** The cleanest window of `len` hours in the next day, for planning a walk or errand. */
-export function cleanestWindow(hours: AirHour[], len = 2, fromHour = 6, toHour = 22): { start: string; end: string; pm25: number } | null {
+export function cleanestWindow(
+  hours: AirHour[],
+  len = 2,
+  fromHour = 6,
+  toHour = 22,
+): { start: string; end: string; pm25: number } | null {
   let best: { start: string; end: string; pm25: number } | null = null;
   for (let i = 0; i + len <= hours.length; i++) {
     const h = Number(hours[i].time.slice(11, 13));
@@ -356,11 +448,13 @@ export function cleanestWindow(hours: AirHour[], len = 2, fromHour = 6, toHour =
 }
 
 // ---------------------------------------------------------------- request URLs (shared by app and server)
-export const AIR_URL = (lat: string, lon: string) => `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}`
-  + '&current=pm2_5,pm10&hourly=pm2_5,pm10&timezone=Asia%2FKolkata&past_days=1&forecast_days=2';
-export const WEATHER_URL = (lat: string, lon: string) => `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
-  + '&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,visibility,boundary_layer_height,temperature_925hPa'
-  + '&wind_speed_unit=ms&timezone=Asia%2FKolkata&forecast_days=2';
+export const AIR_URL = (lat: string, lon: string) =>
+  `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}` +
+  '&current=pm2_5,pm10&hourly=pm2_5,pm10&timezone=Asia%2FKolkata&past_days=1&forecast_days=2';
+export const WEATHER_URL = (lat: string, lon: string) =>
+  `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+  '&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,visibility,boundary_layer_height,temperature_925hPa' +
+  '&wind_speed_unit=ms&timezone=Asia%2FKolkata&forecast_days=2';
 /** Delhi NCT plus a margin: the only area this service has street data and advice for */
 export const COVERAGE = { west: 76.7, south: 28.3, east: 77.5, north: 29.0 };
 export const inCoverageArea = (lat: number, lon: number) =>

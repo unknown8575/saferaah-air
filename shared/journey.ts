@@ -67,7 +67,10 @@ export class JourneyMonitor {
     const ev: JourneyEvent[] = [];
     const prev = this.fixes[this.fixes.length - 1];
     if (prev && f.t <= prev.t) return ev; // out-of-order / duplicate
-    if (f.acc > 150) { this.fixes.push(f); return this.timeChecks(f.t, ev); } // too vague to judge position
+    if (f.acc > 150) {
+      this.fixes.push(f);
+      return this.timeChecks(f.t, ev);
+    } // too vague to judge position
     if (prev) {
       const dt = (f.t - prev.t) / 3600000;
       const kmh = dt > 0 ? haversine(prev.lon, prev.lat, f.lon, f.lat) / 1000 / dt : 0;
@@ -91,14 +94,23 @@ export class JourneyMonitor {
     const dRoute = pointPolylineDist(this.proj, [f.lon, f.lat], this.plan.route);
     if (dRoute > 50 + Math.min(f.acc, 50)) {
       this.offCount++;
-      if (this.offCount >= 3 && !this.isOff) { this.isOff = true; ev.push({ type: 'off_route', distM: Math.round(dRoute) }); }
+      if (this.offCount >= 3 && !this.isOff) {
+        this.isOff = true;
+        ev.push({ type: 'off_route', distM: Math.round(dRoute) });
+      }
     } else {
       this.offCount = 0;
-      if (this.isOff) { this.isOff = false; ev.push({ type: 'back_on_route' }); }
+      if (this.isOff) {
+        this.isOff = false;
+        ev.push({ type: 'back_on_route' });
+      }
     }
 
     // stationary detection: stayed within 30 m of an anchor
-    if (!this.stopAnchor || this.proj.dist(f.lon, f.lat, this.stopAnchor.lon, this.stopAnchor.lat) > 30 + Math.min(f.acc, 30)) {
+    if (
+      !this.stopAnchor ||
+      this.proj.dist(f.lon, f.lat, this.stopAnchor.lon, this.stopAnchor.lat) > 30 + Math.min(f.acc, 30)
+    ) {
       this.stopAnchor = f;
       this.stopAlerted = false;
     } else if (!this.stopAlerted) {
@@ -124,25 +136,39 @@ export class JourneyMonitor {
     const due = this.plan.startedAt + this.plan.etaS * 1000 * 1.25 + grace;
     if (now > due) {
       this.overdueAlerted = true;
-      ev.push({ type: 'overdue', minutesLate: Math.round((now - (this.plan.startedAt + this.plan.etaS * 1000)) / 60000) });
+      ev.push({
+        type: 'overdue',
+        minutesLate: Math.round((now - (this.plan.startedAt + this.plan.etaS * 1000)) / 60000),
+      });
     }
     return ev;
   }
 
   /** Re-arm the stop / overdue checks after the user answers "I'm OK". */
   acknowledge(kind: 'stopped' | 'overdue', now: number): void {
-    if (kind === 'stopped') { this.stopAnchor = null; this.stopAlerted = false; }
-    if (kind === 'overdue') { this.overdueAlerted = false; this.plan.startedAt = now - this.plan.etaS * 1000; }
+    if (kind === 'stopped') {
+      this.stopAnchor = null;
+      this.stopAlerted = false;
+    }
+    if (kind === 'overdue') {
+      this.overdueAlerted = false;
+      this.plan.startedAt = now - this.plan.etaS * 1000;
+    }
   }
 
   private onRiskySegment(f: Fix): boolean {
     const tiers = this.plan.segTier;
     if (!tiers?.length) return true;
-    let best = Infinity, bi = 0;
+    let best = Infinity,
+      bi = 0;
     for (let i = 1; i < this.plan.route.length; i++) {
-      const a = this.plan.route[i - 1], b = this.plan.route[i];
+      const a = this.plan.route[i - 1],
+        b = this.plan.route[i];
       const d = this.proj.pointSegDist(f.lon, f.lat, a[0], a[1], b[0], b[1]);
-      if (d < best) { best = d; bi = i - 1; }
+      if (d < best) {
+        best = d;
+        bi = i - 1;
+      }
     }
     return tiers[bi] !== 'green';
   }
@@ -161,18 +187,24 @@ export function routeCoverage(route: LonLat[], fixes: Fix[]): number {
   const proj = new LocalProjection(route[0][1]);
   const good = fixes.filter((f) => f.acc <= 100);
   if (!good.length) return 0;
-  let total = 0, covered = 0;
+  let total = 0,
+    covered = 0;
   for (let i = 1; i < route.length; i++) {
-    const a = route[i - 1], b = route[i];
+    const a = route[i - 1],
+      b = route[i];
     const len = proj.dist(a[0], a[1], b[0], b[1]);
     const n = Math.max(1, Math.ceil(len / 15));
     for (let k = 0; k < n; k++) {
       const t = (k + 0.5) / n;
-      const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+      const x = a[0] + (b[0] - a[0]) * t,
+        y = a[1] + (b[1] - a[1]) * t;
       const piece = len / n;
       total += piece;
       for (const f of good) {
-        if (proj.dist(x, y, f.lon, f.lat) <= Math.max(35, f.acc)) { covered += piece; break; }
+        if (proj.dist(x, y, f.lon, f.lat) <= Math.max(35, f.acc)) {
+          covered += piece;
+          break;
+        }
       }
     }
   }

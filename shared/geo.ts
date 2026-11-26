@@ -10,8 +10,7 @@ const DEG = Math.PI / 180;
 export function haversine(aLon: number, aLat: number, bLon: number, bLat: number): number {
   const dLat = (bLat - aLat) * DEG;
   const dLon = (bLon - aLon) * DEG;
-  const s =
-    Math.sin(dLat / 2) ** 2 + Math.cos(aLat * DEG) * Math.cos(bLat * DEG) * Math.sin(dLon / 2) ** 2;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * DEG) * Math.cos(bLat * DEG) * Math.sin(dLon / 2) ** 2;
   return 2 * R_EARTH * Math.asin(Math.min(1, Math.sqrt(s)));
 }
 
@@ -43,19 +42,20 @@ export class LocalProjection {
     return Math.sqrt(this.dist2(aLon, aLat, bLon, bLat));
   }
   /** Distance in metres from point P to segment AB. */
-  pointSegDist(
-    pLon: number, pLat: number,
-    aLon: number, aLat: number,
-    bLon: number, bLat: number,
-  ): number {
-    const px = pLon * this.kx, py = pLat * this.ky;
-    const ax = aLon * this.kx, ay = aLat * this.ky;
-    const bx = bLon * this.kx, by = bLat * this.ky;
-    const dx = bx - ax, dy = by - ay;
+  pointSegDist(pLon: number, pLat: number, aLon: number, aLat: number, bLon: number, bLat: number): number {
+    const px = pLon * this.kx,
+      py = pLat * this.ky;
+    const ax = aLon * this.kx,
+      ay = aLat * this.ky;
+    const bx = bLon * this.kx,
+      by = bLat * this.ky;
+    const dx = bx - ax,
+      dy = by - ay;
     const len2 = dx * dx + dy * dy;
     let t = len2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
     t = Math.max(0, Math.min(1, t));
-    const cx = ax + t * dx - px, cy = ay + t * dy - py;
+    const cx = ax + t * dx - px,
+      cy = ay + t * dy - py;
     return Math.sqrt(cx * cx + cy * cy);
   }
 }
@@ -82,8 +82,10 @@ export function polylineLength(line: LonLat[]): number {
 export function pointInRing(lon: number, lat: number, ring: LonLat[]): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1];
-    const xj = ring[j][0], yj = ring[j][1];
+    const xi = ring[i][0],
+      yi = ring[i][1];
+    const xj = ring[j][0],
+      yj = ring[j][1];
     if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
   }
   return inside;
@@ -113,7 +115,10 @@ export class GridIndex {
   private cells = new Map<number, number[]>();
   private readonly cdLon: number;
   private readonly cdLat: number;
-  constructor(proj: LocalProjection, readonly cellM: number) {
+  constructor(
+    proj: LocalProjection,
+    readonly cellM: number,
+  ) {
     this.cdLon = cellM / proj.kx;
     this.cdLat = cellM / proj.ky;
   }

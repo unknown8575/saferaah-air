@@ -11,7 +11,11 @@ import { LocalProjection, GridIndex, type LonLat } from './geo.ts';
 
 type ArrType = 'i32' | 'u32' | 'f32' | 'u16' | 'u8';
 const CTORS = {
-  i32: Int32Array, u32: Uint32Array, f32: Float32Array, u16: Uint16Array, u8: Uint8Array,
+  i32: Int32Array,
+  u32: Uint32Array,
+  f32: Float32Array,
+  u16: Uint16Array,
+  u8: Uint8Array,
 } as const;
 
 export interface GraphArrays {
@@ -44,13 +48,29 @@ export interface GraphMeta {
 }
 
 const ORDER: [keyof GraphArrays, ArrType][] = [
-  ['nodeLon', 'i32'], ['nodeLat', 'i32'], ['edgeU', 'u32'], ['edgeV', 'u32'],
-  ['edgeLen', 'f32'], ['edgeName', 'i32'], ['edgePoliceM', 'u16'], ['edgeStationM', 'u16'],
-  ['poiOff', 'u32'], ['poiIdx', 'u32'], ['shapeOff', 'u32'], ['shapeLon', 'i32'], ['shapeLat', 'i32'],
-  ['edgeClass', 'u8'], ['edgeFlags', 'u8'], ['edgeBldg', 'u8'], ['edgeGreen', 'u8'],
+  ['nodeLon', 'i32'],
+  ['nodeLat', 'i32'],
+  ['edgeU', 'u32'],
+  ['edgeV', 'u32'],
+  ['edgeLen', 'f32'],
+  ['edgeName', 'i32'],
+  ['edgePoliceM', 'u16'],
+  ['edgeStationM', 'u16'],
+  ['poiOff', 'u32'],
+  ['poiIdx', 'u32'],
+  ['shapeOff', 'u32'],
+  ['shapeLon', 'i32'],
+  ['shapeLat', 'i32'],
+  ['edgeClass', 'u8'],
+  ['edgeFlags', 'u8'],
+  ['edgeBldg', 'u8'],
+  ['edgeGreen', 'u8'],
 ];
 
-export function encodeGraph(a: Omit<GraphArrays, 'shapeOff' | 'shapeLon' | 'shapeLat'> & Partial<GraphArrays>, meta: GraphMeta): Uint8Array {
+export function encodeGraph(
+  a: Omit<GraphArrays, 'shapeOff' | 'shapeLon' | 'shapeLat'> & Partial<GraphArrays>,
+  meta: GraphMeta,
+): Uint8Array {
   const full = {
     ...a,
     shapeOff: a.shapeOff ?? new Uint32Array(a.edgeU.length + 1),
@@ -77,7 +97,13 @@ export function encodeGraph(a: Omit<GraphArrays, 'shapeOff' | 'shapeLon' | 'shap
   return out;
 }
 
-export interface SnapResult { edge: number; t: number; lon: number; lat: number; distM: number }
+export interface SnapResult {
+  edge: number;
+  t: number;
+  lon: number;
+  lat: number;
+  distM: number;
+}
 
 export class Graph {
   readonly a: GraphArrays;
@@ -128,8 +154,12 @@ export class Graph {
     }
   }
 
-  lon(i: number): number { return this.a.nodeLon[i] / 1e6; }
-  lat(i: number): number { return this.a.nodeLat[i] / 1e6; }
+  lon(i: number): number {
+    return this.a.nodeLon[i] / 1e6;
+  }
+  lat(i: number): number {
+    return this.a.nodeLat[i] / 1e6;
+  }
   other(e: number, from: number): number {
     return this.a.edgeU[e] === from ? this.a.edgeV[e] : this.a.edgeU[e];
   }
@@ -143,7 +173,9 @@ export class Graph {
 
   /** Full geometry of an edge from u to v. */
   polyline(e: number): LonLat[] {
-    const a = this.a, u = a.edgeU[e], v = a.edgeV[e];
+    const a = this.a,
+      u = a.edgeU[e],
+      v = a.edgeV[e];
     const pts: LonLat[] = [[this.lon(u), this.lat(u)]];
     for (let k = a.shapeOff[e]; k < a.shapeOff[e + 1]; k++) pts.push([a.shapeLon[k] / 1e6, a.shapeLat[k] / 1e6]);
     pts.push([this.lon(v), this.lat(v)]);
@@ -162,9 +194,14 @@ export class Graph {
   cut(e: number, t0: number, t1: number): LonLat[] {
     const pts = this.polyline(e);
     const rev = t1 < t0;
-    if (rev) { pts.reverse(); t0 = 1 - t0; t1 = 1 - t1; }
+    if (rev) {
+      pts.reverse();
+      t0 = 1 - t0;
+      t1 = 1 - t1;
+    }
     const cum = [0];
-    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + this.proj.dist(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]));
+    for (let i = 1; i < pts.length; i++)
+      cum.push(cum[i - 1] + this.proj.dist(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]));
     const L = cum[cum.length - 1] || 1;
     const at = (d: number): LonLat => {
       let i = 1;
@@ -173,7 +210,8 @@ export class Graph {
       const f = Math.min(1, Math.max(0, (d - cum[i - 1]) / seg));
       return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * f, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f];
     };
-    const d0 = t0 * L, d1 = t1 * L;
+    const d0 = t0 * L,
+      d1 = t1 * L;
     const out: LonLat[] = [at(d0)];
     for (let i = 1; i < pts.length - 1; i++) if (cum[i] > d0 && cum[i] < d1) out.push(pts[i]);
     if (d1 > d0) out.push(at(d1));
@@ -184,11 +222,15 @@ export class Graph {
     const g = new GridIndex(this.proj, 150);
     const a = this.a;
     for (let e = 0; e < this.m; e++) {
-      let x0 = Math.min(a.nodeLon[a.edgeU[e]], a.nodeLon[a.edgeV[e]]), x1 = Math.max(a.nodeLon[a.edgeU[e]], a.nodeLon[a.edgeV[e]]);
-      let y0 = Math.min(a.nodeLat[a.edgeU[e]], a.nodeLat[a.edgeV[e]]), y1 = Math.max(a.nodeLat[a.edgeU[e]], a.nodeLat[a.edgeV[e]]);
+      let x0 = Math.min(a.nodeLon[a.edgeU[e]], a.nodeLon[a.edgeV[e]]),
+        x1 = Math.max(a.nodeLon[a.edgeU[e]], a.nodeLon[a.edgeV[e]]);
+      let y0 = Math.min(a.nodeLat[a.edgeU[e]], a.nodeLat[a.edgeV[e]]),
+        y1 = Math.max(a.nodeLat[a.edgeU[e]], a.nodeLat[a.edgeV[e]]);
       for (let k = a.shapeOff[e]; k < a.shapeOff[e + 1]; k++) {
-        x0 = Math.min(x0, a.shapeLon[k]); x1 = Math.max(x1, a.shapeLon[k]);
-        y0 = Math.min(y0, a.shapeLat[k]); y1 = Math.max(y1, a.shapeLat[k]);
+        x0 = Math.min(x0, a.shapeLon[k]);
+        x1 = Math.max(x1, a.shapeLon[k]);
+        y0 = Math.min(y0, a.shapeLat[k]);
+        y1 = Math.max(y1, a.shapeLat[k]);
       }
       g.insertBBox(e, x0 / 1e6, y0 / 1e6, x1 / 1e6, y1 / 1e6);
     }
@@ -203,7 +245,10 @@ export class Graph {
     for (const e of this.grid.near(lon, lat, radiusM)) {
       const pts = this.polyline(e);
       for (let i = 1; i < pts.length; i++) {
-        if (P.pointSegDist(lon, lat, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) <= radiusM) { out.push(e); break; }
+        if (P.pointSegDist(lon, lat, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) <= radiusM) {
+          out.push(e);
+          break;
+        }
       }
     }
     return out;
@@ -212,14 +257,18 @@ export class Graph {
   /** Edges with any part inside a lon/lat box (approximate, for map overlays). */
   edgesInBox(w: number, s: number, e: number, n: number, limit: number): number[] {
     if (!this.grid) this.grid = this.buildGrid();
-    const cx = (w + e) / 2, cy = (s + n) / 2;
+    const cx = (w + e) / 2,
+      cy = (s + n) / 2;
     const r = Math.max(this.proj.dist(w, cy, e, cy), this.proj.dist(cx, s, cx, n)) / 2 + 50;
     const a = this.a;
     const out: number[] = [];
     for (const ed of this.grid.near(cx, cy, r)) {
-      const u = a.edgeU[ed], v = a.edgeV[ed];
-      const x0 = Math.min(a.nodeLon[u], a.nodeLon[v]) / 1e6, x1 = Math.max(a.nodeLon[u], a.nodeLon[v]) / 1e6;
-      const y0 = Math.min(a.nodeLat[u], a.nodeLat[v]) / 1e6, y1 = Math.max(a.nodeLat[u], a.nodeLat[v]) / 1e6;
+      const u = a.edgeU[ed],
+        v = a.edgeV[ed];
+      const x0 = Math.min(a.nodeLon[u], a.nodeLon[v]) / 1e6,
+        x1 = Math.max(a.nodeLon[u], a.nodeLon[v]) / 1e6;
+      const y0 = Math.min(a.nodeLat[u], a.nodeLat[v]) / 1e6,
+        y1 = Math.max(a.nodeLat[u], a.nodeLat[v]) / 1e6;
       if (x1 < w || x0 > e || y1 < s || y0 > n) continue;
       out.push(ed);
     }
@@ -237,21 +286,40 @@ export class Graph {
    */
   snap(lon: number, lat: number, usable: (e: number) => boolean, maxM = 600): SnapResult | null {
     if (!this.grid) this.grid = this.buildGrid();
-    const P = this.proj, px = P.x(lon), py = P.y(lat);
+    const P = this.proj,
+      px = P.x(lon),
+      py = P.y(lat);
     for (let r = 60; r <= maxM; r *= 2) {
       let best: SnapResult | null = null;
       for (const e of this.grid.near(lon, lat, r)) {
         if (!usable(e)) continue;
         const pts = this.polyline(e);
-        let along = 0, total = 0, bestD = Infinity, bestAlong = 0, bx = 0, by = 0;
+        let along = 0,
+          total = 0,
+          bestD = Infinity,
+          bestAlong = 0,
+          bx = 0,
+          by = 0;
         for (let i = 1; i < pts.length; i++) {
-          const ax = P.x(pts[i - 1][0]), ay = P.y(pts[i - 1][1]), cx = P.x(pts[i][0]), cy = P.y(pts[i][1]);
-          const dx = cx - ax, dy = cy - ay, l2 = dx * dx + dy * dy, len = Math.sqrt(l2);
+          const ax = P.x(pts[i - 1][0]),
+            ay = P.y(pts[i - 1][1]),
+            cx = P.x(pts[i][0]),
+            cy = P.y(pts[i][1]);
+          const dx = cx - ax,
+            dy = cy - ay,
+            l2 = dx * dx + dy * dy,
+            len = Math.sqrt(l2);
           let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
           t = Math.max(0, Math.min(1, t));
-          const qx = ax + t * dx, qy = ay + t * dy;
+          const qx = ax + t * dx,
+            qy = ay + t * dy;
           const d = Math.hypot(qx - px, qy - py);
-          if (d < bestD) { bestD = d; bestAlong = along + t * len; bx = qx; by = qy; }
+          if (d < bestD) {
+            bestD = d;
+            bestAlong = along + t * len;
+            bx = qx;
+            by = qy;
+          }
           along += len;
         }
         total = along;

@@ -34,24 +34,41 @@ interface Feature {
   geometry: { type: string; coordinates: any };
   properties: { kind: string; name?: string; tags?: Record<string, string>; center?: LonLat; snapshot?: string };
 }
-const fc = JSON.parse(readFileSync(inPath, 'utf8')) as { features: Feature[]; bbox?: number[]; snapshot?: string; source?: string };
+const fc = JSON.parse(readFileSync(inPath, 'utf8')) as {
+  features: Feature[];
+  bbox?: number[];
+  snapshot?: string;
+  source?: string;
+};
 log('features', fc.features.length);
 
 const MAX_EDGE_M = 150; // long roads are cut so risk can change along them
 
 // ---------- bbox / projection ----------
-let minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
+let minLon = 180,
+  minLat = 90,
+  maxLon = -180,
+  maxLat = -90;
 let snapshot = fc.snapshot ?? '';
 for (const f of fc.features) {
   if (f.properties.kind !== 'road') continue;
   snapshot ||= f.properties.snapshot ?? '';
   const lines: LonLat[][] = f.geometry.type === 'LineString' ? [f.geometry.coordinates] : f.geometry.coordinates;
-  for (const l of lines) for (const [x, y] of l) {
-    if (x < minLon) minLon = x; if (x > maxLon) maxLon = x;
-    if (y < minLat) minLat = y; if (y > maxLat) maxLat = y;
-  }
+  for (const l of lines)
+    for (const [x, y] of l) {
+      if (x < minLon) minLon = x;
+      if (x > maxLon) maxLon = x;
+      if (y < minLat) minLat = y;
+      if (y > maxLat) maxLat = y;
+    }
 }
-if (fc.bbox) [minLon, minLat, maxLon, maxLat] = [Math.max(minLon, fc.bbox[0]), Math.max(minLat, fc.bbox[1]), Math.min(maxLon, fc.bbox[2]), Math.min(maxLat, fc.bbox[3])];
+if (fc.bbox)
+  [minLon, minLat, maxLon, maxLat] = [
+    Math.max(minLon, fc.bbox[0]),
+    Math.max(minLat, fc.bbox[1]),
+    Math.min(maxLon, fc.bbox[2]),
+    Math.min(maxLat, fc.bbox[3]),
+  ];
 const proj = new LocalProjection((minLat + maxLat) / 2);
 const inBox = (lon: number, lat: number) => lon >= minLon && lon <= maxLon && lat >= minLat && lat <= maxLat;
 
@@ -78,8 +95,18 @@ for (const f of fc.features) {
 log('pois', pois.length, 'activity points', activity.length);
 
 // ---------- routable ways ----------
-const VEHICLE: Set<RoadClass> = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary',
-  'unclassified', 'residential', 'living_street', 'service', 'track']);
+const VEHICLE: Set<RoadClass> = new Set([
+  'motorway',
+  'trunk',
+  'primary',
+  'secondary',
+  'tertiary',
+  'unclassified',
+  'residential',
+  'living_street',
+  'service',
+  'track',
+]);
 const NO = new Set(['no', 'private']);
 const YES = new Set(['yes', 'designated', 'permissive', 'destination']);
 let onewayKnown = false;
@@ -88,10 +115,20 @@ const nameIdx = new Map<string, number>();
 const nameOf = (s: string) => {
   if (!s) return -1;
   let i = nameIdx.get(s);
-  if (i === undefined) { i = names.length; names.push(s); nameIdx.set(s, i); }
+  if (i === undefined) {
+    i = names.length;
+    names.push(s);
+    nameIdx.set(s, i);
+  }
   return i;
 };
-interface Way { pts: [number, number][]; cls: number; flags: number; name: number; footOnly: boolean }
+interface Way {
+  pts: [number, number][];
+  cls: number;
+  flags: number;
+  name: number;
+  footOnly: boolean;
+}
 const ways: Way[] = [];
 const micro = (v: number) => Math.round(v * 1e6);
 for (const f of fc.features) {
@@ -110,7 +147,10 @@ for (const f of fc.features) {
   let reverse = false;
   if ('oneway' in t || 'junction' in t) onewayKnown = true;
   if (t.oneway === 'yes' || t.oneway === '1' || t.oneway === 'true' || t.junction === 'roundabout') flags |= F_ONEWAY;
-  if (t.oneway === '-1') { flags |= F_ONEWAY; reverse = true; }
+  if (t.oneway === '-1') {
+    flags |= F_ONEWAY;
+    reverse = true;
+  }
   const nm = nameOf((t['name:en'] || t.name || f.properties.name || '').trim());
   const lines: LonLat[][] = f.geometry.type === 'LineString' ? [f.geometry.coordinates] : f.geometry.coordinates;
   for (const line of lines) {
@@ -135,26 +175,41 @@ const key = (p: [number, number]) => p[0] * 1e8 + p[1];
   const vGrid = new GridIndex(proj, 10);
   const vPts: [number, number][] = [];
   const vWay: number[] = [];
-  ways.forEach((w, wi) => { for (const p of w.pts) { vGrid.insertPoint(vPts.length, p[0] / 1e6, p[1] / 1e6); vPts.push(p); vWay.push(wi); } });
+  ways.forEach((w, wi) => {
+    for (const p of w.pts) {
+      vGrid.insertPoint(vPts.length, p[0] / 1e6, p[1] / 1e6);
+      vPts.push(p);
+      vWay.push(wi);
+    }
+  });
   const nearest = (p: [number, number], wi: number, maxM: number, roadsOnly: boolean): [number, number] | null => {
-    let best: [number, number] | null = null, bd = maxM;
+    let best: [number, number] | null = null,
+      bd = maxM;
     for (const i of vGrid.near(p[0] / 1e6, p[1] / 1e6, maxM)) {
       if (vWay[i] === wi || (roadsOnly && ways[vWay[i]].footOnly)) continue;
       const d = proj.dist(p[0] / 1e6, p[1] / 1e6, vPts[i][0] / 1e6, vPts[i][1] / 1e6);
-      if (d < bd) { bd = d; best = vPts[i]; }
+      if (d < bd) {
+        bd = d;
+        best = vPts[i];
+      }
     }
     return best;
   };
   const use = new Map<number, number>();
   for (const w of ways) for (const p of w.pts) use.set(key(p), (use.get(key(p)) ?? 0) + 1);
-  let snapped = 0, ends = 0;
+  let snapped = 0,
+    ends = 0;
   ways.forEach((w, wi) => {
     if (!w.footOnly) return;
     w.pts = w.pts.map((p, i) => {
       const end = i === 0 || i === w.pts.length - 1;
       if ((use.get(key(p)) ?? 0) > 1) return p;
       const q = nearest(p, wi, 1.5, true) ?? (end ? nearest(p, wi, 4, false) : null);
-      if (q) { if (end) ends++; else snapped++; return [q[0], q[1]]; }
+      if (q) {
+        if (end) ends++;
+        else snapped++;
+        return [q[0], q[1]];
+      }
       return p;
     });
   });
@@ -170,28 +225,46 @@ for (const w of ways) {
   });
 }
 const nodeId = new Map<number, number>();
-const nLon: number[] = [], nLat: number[] = [];
+const nLon: number[] = [],
+  nLat: number[] = [];
 const node = (p: [number, number]) => {
   const k = key(p);
   let i = nodeId.get(k);
-  if (i === undefined) { i = nLon.length; nodeId.set(k, i); nLon.push(p[0]); nLat.push(p[1]); }
+  if (i === undefined) {
+    i = nLon.length;
+    nodeId.set(k, i);
+    nLon.push(p[0]);
+    nLat.push(p[1]);
+  }
   return i;
 };
-interface RawEdge { u: number; v: number; shape: [number, number][]; len: number; cls: number; flags: number; name: number }
+interface RawEdge {
+  u: number;
+  v: number;
+  shape: [number, number][];
+  len: number;
+  cls: number;
+  flags: number;
+  name: number;
+}
 const raw: RawEdge[] = [];
 const segLen = (a: [number, number], b: [number, number]) => proj.dist(a[0] / 1e6, a[1] / 1e6, b[0] / 1e6, b[1] / 1e6);
 for (const w of ways) {
-  let start = 0, len = 0;
+  let start = 0,
+    len = 0;
   for (let i = 1; i < w.pts.length; i++) {
     len += segLen(w.pts[i - 1], w.pts[i]);
     const last = i === w.pts.length - 1;
     const junction = (usage.get(key(w.pts[i])) ?? 0) > 1;
     if (last || junction || len >= MAX_EDGE_M) {
-      const u = node(w.pts[start]), v = node(w.pts[i]);
+      const u = node(w.pts[start]),
+        v = node(w.pts[i]);
       if (u !== v || i - start > 1) {
-        if (u !== v && len > 0.05) raw.push({ u, v, shape: w.pts.slice(start + 1, i), len, cls: w.cls, flags: w.flags, name: w.name });
+        if (u !== v && len > 0.05)
+          raw.push({ u, v, shape: w.pts.slice(start + 1, i), len, cls: w.cls, flags: w.flags, name: w.name });
       }
-      start = i; len = 0;
+      start = i;
+      len = 0;
     }
   }
 }
@@ -200,12 +273,30 @@ log('raw nodes', nLon.length, 'raw edges', raw.length);
 // ---------- keep the largest connected network ----------
 const N0 = nLon.length;
 const parent = new Int32Array(N0).map((_, i) => i);
-const find = (x: number): number => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
-for (const e of raw) { const a = find(e.u), b = find(e.v); if (a !== b) parent[a] = b; }
+const find = (x: number): number => {
+  while (parent[x] !== x) {
+    parent[x] = parent[parent[x]];
+    x = parent[x];
+  }
+  return x;
+};
+for (const e of raw) {
+  const a = find(e.u),
+    b = find(e.v);
+  if (a !== b) parent[a] = b;
+}
 const compSize = new Map<number, number>();
-for (let i = 0; i < N0; i++) { const r = find(i); compSize.set(r, (compSize.get(r) ?? 0) + 1); }
-let bestRoot = -1, bestSize = 0;
-for (const [r, s] of compSize) if (s > bestSize) { bestRoot = r; bestSize = s; }
+for (let i = 0; i < N0; i++) {
+  const r = find(i);
+  compSize.set(r, (compSize.get(r) ?? 0) + 1);
+}
+let bestRoot = -1,
+  bestSize = 0;
+for (const [r, s] of compSize)
+  if (s > bestSize) {
+    bestRoot = r;
+    bestSize = s;
+  }
 const remap = new Int32Array(N0).fill(-1);
 let N = 0;
 for (let i = 0; i < N0; i++) if (find(i) === bestRoot) remap[i] = N++;
@@ -216,21 +307,43 @@ log('largest network nodes', N, 'edges', M, `(dropped ${N0 - N} nodes in ${compS
 let shapeCount = 0;
 for (const e of kept) shapeCount += e.shape.length;
 const A: GraphArrays = {
-  nodeLon: new Int32Array(N), nodeLat: new Int32Array(N),
-  edgeU: new Uint32Array(M), edgeV: new Uint32Array(M), edgeLen: new Float32Array(M),
-  edgeClass: new Uint8Array(M), edgeFlags: new Uint8Array(M), edgeName: new Int32Array(M),
-  edgePoliceM: new Uint16Array(M), edgeStationM: new Uint16Array(M),
-  edgeBldg: new Uint8Array(M), edgeGreen: new Uint8Array(M),
-  poiOff: new Uint32Array(M + 1), poiIdx: new Uint32Array(0),
-  shapeOff: new Uint32Array(M + 1), shapeLon: new Int32Array(shapeCount), shapeLat: new Int32Array(shapeCount),
+  nodeLon: new Int32Array(N),
+  nodeLat: new Int32Array(N),
+  edgeU: new Uint32Array(M),
+  edgeV: new Uint32Array(M),
+  edgeLen: new Float32Array(M),
+  edgeClass: new Uint8Array(M),
+  edgeFlags: new Uint8Array(M),
+  edgeName: new Int32Array(M),
+  edgePoliceM: new Uint16Array(M),
+  edgeStationM: new Uint16Array(M),
+  edgeBldg: new Uint8Array(M),
+  edgeGreen: new Uint8Array(M),
+  poiOff: new Uint32Array(M + 1),
+  poiIdx: new Uint32Array(0),
+  shapeOff: new Uint32Array(M + 1),
+  shapeLon: new Int32Array(shapeCount),
+  shapeLat: new Int32Array(shapeCount),
 };
-for (let i = 0; i < N0; i++) if (remap[i] >= 0) { A.nodeLon[remap[i]] = nLon[i]; A.nodeLat[remap[i]] = nLat[i]; }
+for (let i = 0; i < N0; i++)
+  if (remap[i] >= 0) {
+    A.nodeLon[remap[i]] = nLon[i];
+    A.nodeLat[remap[i]] = nLat[i];
+  }
 let so = 0;
 kept.forEach((e, j) => {
-  A.edgeU[j] = remap[e.u]; A.edgeV[j] = remap[e.v]; A.edgeLen[j] = e.len;
-  A.edgeClass[j] = e.cls; A.edgeFlags[j] = e.flags | (onewayKnown ? F_ONEWAY_KNOWN : 0); A.edgeName[j] = e.name;
+  A.edgeU[j] = remap[e.u];
+  A.edgeV[j] = remap[e.v];
+  A.edgeLen[j] = e.len;
+  A.edgeClass[j] = e.cls;
+  A.edgeFlags[j] = e.flags | (onewayKnown ? F_ONEWAY_KNOWN : 0);
+  A.edgeName[j] = e.name;
   A.shapeOff[j] = so;
-  for (const p of e.shape) { A.shapeLon[so] = p[0]; A.shapeLat[so] = p[1]; so++; }
+  for (const p of e.shape) {
+    A.shapeLon[so] = p[0];
+    A.shapeLat[so] = p[1];
+    so++;
+  }
 });
 A.shapeOff[M] = so;
 
@@ -256,7 +369,8 @@ const mid = (j: number): LonLat => {
 };
 const distToPoly = (pts: LonLat[], x: number, y: number) => {
   let best = Infinity;
-  for (let i = 1; i < pts.length; i++) best = Math.min(best, proj.pointSegDist(x, y, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]));
+  for (let i = 1; i < pts.length; i++)
+    best = Math.min(best, proj.pointSegDist(x, y, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]));
   return best;
 };
 const mids: LonLat[] = Array.from({ length: M });
@@ -279,8 +393,16 @@ function nearestDistField(points: { lon: number; lat: number }[], out: Uint16Arr
     out[j] = Math.min(65535, Math.round(best));
   }
 }
-nearestDistField(pois.filter((p) => p.cat === 'police'), A.edgePoliceM, 4000);
-nearestDistField(pois.filter((p) => p.cat === 'station'), A.edgeStationM, 4000);
+nearestDistField(
+  pois.filter((p) => p.cat === 'police'),
+  A.edgePoliceM,
+  4000,
+);
+nearestDistField(
+  pois.filter((p) => p.cat === 'station'),
+  A.edgeStationM,
+  4000,
+);
 log('police/station distances done');
 
 // ---------- POIs and activity within 50 m of each edge ----------
@@ -307,24 +429,42 @@ A.poiIdx = Uint32Array.from(poiLists);
 log('edge->poi links', poiLists.length);
 
 // ---------- parks / forest / industrial / cemetery ----------
-interface Area { rings: LonLat[][]; large: boolean; industrial: boolean }
+interface Area {
+  rings: LonLat[][];
+  large: boolean;
+  industrial: boolean;
+}
 const areas: Area[] = [];
 const aGrid = new GridIndex(proj, 200);
 for (const f of fc.features) {
   const t = f.properties.tags ?? {};
   const isGreen = f.properties.kind === 'green';
-  const industrial = ['industrial', 'construction', 'brownfield', 'quarry', 'cemetery', 'military'].includes(t.landuse ?? '') || t.amenity === 'grave_yard';
+  const industrial =
+    ['industrial', 'construction', 'brownfield', 'quarry', 'cemetery', 'military'].includes(t.landuse ?? '') ||
+    t.amenity === 'grave_yard';
   if (!isGreen && !industrial) continue;
-  const polys: LonLat[][][] = f.geometry.type === 'Polygon' ? [f.geometry.coordinates]
-    : f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [];
+  const polys: LonLat[][][] =
+    f.geometry.type === 'Polygon'
+      ? [f.geometry.coordinates]
+      : f.geometry.type === 'MultiPolygon'
+        ? f.geometry.coordinates
+        : [];
   for (const rings of polys) {
     if (!rings.length || rings[0].length < 4) continue;
     const area = ringAreaM2(proj, rings[0]);
     if (area < 2000) continue; // small lawns aren't isolating
     const id = areas.length;
     areas.push({ rings, large: area > 20000, industrial });
-    let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
-    for (const [x, y] of rings[0]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    let x0 = 180,
+      y0 = 90,
+      x1 = -180,
+      y1 = -90;
+    for (const [x, y] of rings[0]) {
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
+    }
     aGrid.insertBBox(id, x0 - 0.0004, y0 - 0.0004, x1 + 0.0004, y1 + 0.0004);
   }
 }
@@ -337,7 +477,10 @@ for (let j = 0; j < M; j++) {
     else if (a.large && !a.industrial && !(bits & 2)) {
       const ring = a.rings[0];
       for (let k = 1; k < ring.length; k++) {
-        if (proj.pointSegDist(x, y, ring[k - 1][0], ring[k - 1][1], ring[k][0], ring[k][1]) < 30) { bits |= 2; break; }
+        if (proj.pointSegDist(x, y, ring[k - 1][0], ring[k - 1][1], ring[k][0], ring[k][1]) < 30) {
+          bits |= 2;
+          break;
+        }
       }
     }
   }
@@ -352,10 +495,20 @@ const bin = encodeGraph(A, { bbox, snapshot, source, onewayKnown, names, area: a
 writeFileSync(join(outDir, 'graph.bin'), bin);
 writeFileSync(join(outDir, 'pois.json'), JSON.stringify(pois));
 const version = createHash('sha1').update(bin).digest('hex').slice(0, 12);
-writeFileSync(join(outDir, 'version.json'), JSON.stringify({
-  version, snapshot, bbox, area: areaName, builtAt: new Date().toISOString(),
-  nodes: N, edges: M, pois: pois.length, source,
-}));
+writeFileSync(
+  join(outDir, 'version.json'),
+  JSON.stringify({
+    version,
+    snapshot,
+    bbox,
+    area: areaName,
+    builtAt: new Date().toISOString(),
+    nodes: N,
+    edges: M,
+    pois: pois.length,
+    source,
+  }),
+);
 
 // search index: named places, stations, named POIs, named streets (one entry per name per ~1 km)
 type Entry = [string, number, number, string]; // name, lon, lat, type
@@ -374,16 +527,23 @@ for (const f of fc.features) {
     if (f.geometry.type !== 'Point') continue;
     const [lon, lat] = f.geometry.coordinates as LonLat;
     if (inBox(lon, lat))
-      add(nm, lon, lat, f.properties.kind === 'station' ? 'station' : (poiCategory(t) ?? t.place ?? t.tourism ?? 'place'));
+      add(
+        nm,
+        lon,
+        lat,
+        f.properties.kind === 'station' ? 'station' : (poiCategory(t) ?? t.place ?? t.tourism ?? 'place'),
+      );
   }
 }
 for (const p of pois) add(p.name, p.lon, p.lat, p.cat);
 // every other named place people search for: landmarks, markets, parks, colleges, malls, offices…
 const searchType = (t: Record<string, string>): string => {
-  if (t.tourism === 'attraction' || t.tourism === 'museum' || t.historic || t.tourism === 'viewpoint') return 'landmark';
+  if (t.tourism === 'attraction' || t.tourism === 'museum' || t.historic || t.tourism === 'viewpoint')
+    return 'landmark';
   if (t.leisure === 'park' || t.leisure === 'garden') return 'park';
   if (t.amenity === 'marketplace' || t.shop === 'mall' || t.shop === 'department_store') return 'market';
-  if (t.amenity === 'school' || t.amenity === 'college' || t.amenity === 'university' || t.amenity === 'kindergarten') return 'school';
+  if (t.amenity === 'school' || t.amenity === 'college' || t.amenity === 'university' || t.amenity === 'kindergarten')
+    return 'school';
   if (t.office || t.amenity === 'townhall') return 'office';
   return 'place';
 };
@@ -407,4 +567,6 @@ for (let j = 0; j < M; j++) {
   add(names[k], x, y, 'street');
 }
 writeFileSync(join(outDir, 'search.json'), JSON.stringify(search));
-log(`wrote graph.bin ${(bin.length / 1e6).toFixed(1)} MB (${N} nodes, ${M} edges, ${shapeCount} shape points), pois ${pois.length}, search ${search.length}`);
+log(
+  `wrote graph.bin ${(bin.length / 1e6).toFixed(1)} MB (${N} nodes, ${M} edges, ${shapeCount} shape points), pois ${pois.length}, search ${search.length}`,
+);

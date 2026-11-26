@@ -12,7 +12,9 @@ const TTL = 30 * 60 * 1000;
 const cache = new Map<string, { at: number; v: AirNow | null }>();
 const cell = (x: number) => (Math.round(x * 10) / 10).toFixed(1);
 
-export function airCellOf(p: LonLat): LonLat { return [Number(cell(p[0])), Number(cell(p[1]))]; }
+export function airCellOf(p: LonLat): LonLat {
+  return [Number(cell(p[0])), Number(cell(p[1]))];
+}
 
 async function fromServer(lon: string, lat: string, signal: AbortSignal): Promise<AirNow | null> {
   const r = await fetch(`${API_BASE ? API_BASE + '/' : ''}api/air?lat=${lat}&lon=${lon}`, { signal });
@@ -24,7 +26,9 @@ async function fromServer(lon: string, lat: string, signal: AbortSignal): Promis
 async function fromOpenMeteo(lon: string, lat: string, signal: AbortSignal): Promise<AirNow | null> {
   const [air, wx] = await Promise.all([
     fetch(AIR_URL(lat, lon), { signal }).then((r) => (r.ok ? r.json() : null)),
-    fetch(WEATHER_URL(lat, lon), { signal }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    fetch(WEATHER_URL(lat, lon), { signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null),
   ]);
   const v = air ? parseOpenMeteo(air) : null;
   if (v) v.weather = wx ? parseWeather(wx) : null;
@@ -33,7 +37,8 @@ async function fromOpenMeteo(lon: string, lat: string, signal: AbortSignal): Pro
 
 /** Air now and the next day for the cell around `p` (null if offline). */
 export async function airAt(p: LonLat, opts: { server?: boolean } = {}): Promise<AirNow | null> {
-  const lon = cell(p[0]), lat = cell(p[1]);
+  const lon = cell(p[0]),
+    lat = cell(p[1]);
   const key = `${lon},${lat}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL) return hit.v;
@@ -43,7 +48,11 @@ export async function airAt(p: LonLat, opts: { server?: boolean } = {}): Promise
   try {
     if (opts.server) v = await fromServer(lon, lat, ctl.signal).catch(() => null);
     v ??= await fromOpenMeteo(lon, lat, ctl.signal);
-  } catch { v = null; } finally { clearTimeout(t); }
+  } catch {
+    v = null;
+  } finally {
+    clearTimeout(t);
+  }
   cache.set(key, { at: Date.now(), v });
   return v;
 }

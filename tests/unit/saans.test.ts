@@ -1,19 +1,38 @@
 import { describe, it, expect } from 'vitest';
 import { NOTES } from '../../shared/saans/knowledge.ts';
 import { NoteIndex, tokens, cosine } from '../../shared/saans/retrieve.ts';
-import { compose, buildPrompt, intentOf, groundingNotes, cleanModelText, factsFor, placeIntentOf } from '../../shared/saans/assistant.ts';
-import { dayPlan, purifierCadr, commuteSwaps, windowLabel, DEFAULT_FAMILY, type Family } from '../../shared/saans/plan.ts';
+import {
+  compose,
+  buildPrompt,
+  intentOf,
+  groundingNotes,
+  cleanModelText,
+  factsFor,
+  placeIntentOf,
+} from '../../shared/saans/assistant.ts';
+import {
+  dayPlan,
+  purifierCadr,
+  commuteSwaps,
+  windowLabel,
+  DEFAULT_FAMILY,
+  type Family,
+} from '../../shared/saans/plan.ts';
 import { parseOpenMeteo, type AirNow } from '../../shared/air.ts';
 
 function fakeAir(pmBase = 180): AirNow {
-  const time: string[] = [], pm: number[] = [];
+  const time: string[] = [],
+    pm: number[] = [];
   for (let i = 0; i < 48; i++) {
     const d = i < 24 ? '26' : '27';
     const h = i % 24;
     time.push(`2026-11-${d}T${String(h).padStart(2, '0')}:00`);
     pm.push(pmBase * (1 + 0.45 * Math.cos(((h - 6) / 24) * 2 * Math.PI)));
   }
-  return parseOpenMeteo({ utc_offset_seconds: 19800, hourly: { time, pm2_5: pm, pm10: pm.map((x) => x * 1.7) } }, new Date('2026-11-26T03:00:00Z'))!;
+  return parseOpenMeteo(
+    { utc_offset_seconds: 19800, hourly: { time, pm2_5: pm, pm10: pm.map((x) => x * 1.7) } },
+    new Date('2026-11-26T03:00:00Z'),
+  )!;
 }
 const FAM: Family = { ...DEFAULT_FAMILY, children: 1, elders: 1, asthma: true, commute: { mode: 'car', km: 9 } };
 
@@ -21,7 +40,10 @@ describe('Saans retrieval', () => {
   const idx = new NoteIndex();
   it('TC-170 notes have unique ids, a cluster and a source', () => {
     expect(new Set(NOTES.map((n) => n.id)).size).toBe(NOTES.length);
-    for (const n of NOTES) { expect(n.source.length).toBeGreaterThan(3); expect(n.text.length).toBeGreaterThan(60); }
+    for (const n of NOTES) {
+      expect(n.source.length).toBeGreaterThan(3);
+      expect(n.text.length).toBeGreaterThan(60);
+    }
   });
   it('TC-171 Hinglish words map to English terms', () => {
     expect(tokens('bachche ko khansi')).toEqual(['children', 'cough']);
@@ -89,18 +111,34 @@ describe('Saans answers', () => {
     expect(a.text).toMatch(/AQI \d+/);
     expect(b.text).toMatch(/180 m³\/h/);
     expect(c.text).toMatch(/kg CO₂/);
-    for (const x of [a, b, c]) { expect(x.text).toMatch(/\[\d\]/); expect(x.engine).toBe('saans'); }
+    for (const x of [a, b, c]) {
+      expect(x.text).toMatch(/\[\d\]/);
+      expect(x.engine).toBe('saans');
+    }
     expect(new Set([a.text, b.text, c.text]).size).toBe(3);
   });
   it('TC-180 route answers use the selected route numbers', () => {
-    const r = compose('is my route clean?', { ...ctx, route: { mode: 'auto', minutes: 25, label: 'Cleanest air', pctLess: 12, avoided: ['Mayapuri Industrial Area I'], areas: [] } });
+    const r = compose('is my route clean?', {
+      ...ctx,
+      route: {
+        mode: 'auto',
+        minutes: 25,
+        label: 'Cleanest air',
+        pctLess: 12,
+        avoided: ['Mayapuri Industrial Area I'],
+        areas: [],
+      },
+    });
     expect(r.text).toMatch(/12% less PM2.5/);
     expect(r.text).toMatch(/Mayapuri/);
   });
   it('TC-181 the Gemini prompt carries facts, numbered notes and the rules', () => {
     const notes = groundingNotes('which purifier');
     expect(notes[0].id).toBe('purifier-size');
-    const p = buildPrompt('which purifier', ctx, notes, [{ role: 'user', text: 'hi' }, { role: 'assistant', text: 'hello' }]);
+    const p = buildPrompt('which purifier', ctx, notes, [
+      { role: 'user', text: 'hi' },
+      { role: 'assistant', text: 'hello' },
+    ]);
     const body = p.contents.at(-1)!.parts[0].text;
     expect(body).toMatch(/FACTS/);
     expect(body).toMatch(/CADR about 180/);
@@ -108,7 +146,9 @@ describe('Saans answers', () => {
     expect(p.system).toMatch(/Never invent/);
     expect(p.contents[1].role).toBe('model');
     expect(p.contents.at(-1)!.role).toBe('user');
-    expect(factsFor(ctx).some((f) => /Family \(set by the user\): 2 adults, 1 child, 1 elder, someone with asthma/.test(f))).toBe(true);
+    expect(
+      factsFor(ctx).some((f) => /Family \(set by the user\): 2 adults, 1 child, 1 elder, someone with asthma/.test(f)),
+    ).toBe(true);
   });
   it('TC-182 model output is tidied', () => {
     expect(cleanModelText('## Plan\n**Go** out\n* one\n- two\n\n\n\nend')).toBe('Plan\nGo out\n• one\n• two\n\nend');
@@ -126,10 +166,13 @@ describe('Saans nearby places', () => {
     expect(placeIntentOf('Is agarbatti bad indoors?')).toBeNull();
   });
   it('TC-184 answers list the phone-found places honestly and carry no coordinates', () => {
-    const places = { title: 'Plant nurseries', items: [
-      { name: 'Ganga Nursery', kind: 'Garden centre', distM: 350, open: true },
-      { name: 'Birju Flowers', kind: 'Florist', distM: 1500, open: null, similar: true },
-    ] };
+    const places = {
+      title: 'Plant nurseries',
+      items: [
+        { name: 'Ganga Nursery', kind: 'Garden centre', distM: 350, open: true },
+        { name: 'Birju Flowers', kind: 'Florist', distM: 1500, open: null, similar: true },
+      ],
+    };
     const a = compose('plant shops near me', { ...ctx, places });
     expect(a.text).toMatch(/Ganga Nursery — 350 m, open/);
     expect(a.text).toMatch(/1\.5 km/);

@@ -27,7 +27,8 @@ const log = (...a: unknown[]) => console.log(`[${((Date.now() - t0) / 1000).toFi
 const g = new Graph(readFileSync(`${outDir}/graph.bin`));
 const [W, S, E, N] = g.meta.bbox;
 const CELL = 50;
-const kx = g.proj.kx, ky = g.proj.ky;
+const kx = g.proj.kx,
+  ky = g.proj.ky;
 const NX = Math.ceil(((E - W) * kx) / CELL) + 1;
 const NY = Math.ceil(((N - S) * ky) / CELL) + 1;
 const cx = (lon: number) => Math.max(0, Math.min(NX - 1, Math.floor(((lon - W) * kx) / CELL)));
@@ -40,52 +41,77 @@ log(`grid ${NX}×${NY}`);
 function distanceField(src: Uint8Array): Float32Array {
   const d = new Float32Array(NX * NY).fill(1e9);
   for (let k = 0; k < src.length; k++) if (src[k]) d[k] = 0;
-  const a = CELL, b = CELL * Math.SQRT2;
-  for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
-    const k = j * NX + i;
-    let v = d[k];
-    if (i > 0) v = Math.min(v, d[k - 1] + a);
-    if (j > 0) {
-      v = Math.min(v, d[k - NX] + a);
-      if (i > 0) v = Math.min(v, d[k - NX - 1] + b);
-      if (i < NX - 1) v = Math.min(v, d[k - NX + 1] + b);
+  const a = CELL,
+    b = CELL * Math.SQRT2;
+  for (let j = 0; j < NY; j++)
+    for (let i = 0; i < NX; i++) {
+      const k = j * NX + i;
+      let v = d[k];
+      if (i > 0) v = Math.min(v, d[k - 1] + a);
+      if (j > 0) {
+        v = Math.min(v, d[k - NX] + a);
+        if (i > 0) v = Math.min(v, d[k - NX - 1] + b);
+        if (i < NX - 1) v = Math.min(v, d[k - NX + 1] + b);
+      }
+      d[k] = v;
     }
-    d[k] = v;
-  }
-  for (let j = NY - 1; j >= 0; j--) for (let i = NX - 1; i >= 0; i--) {
-    const k = j * NX + i;
-    let v = d[k];
-    if (i < NX - 1) v = Math.min(v, d[k + 1] + a);
-    if (j < NY - 1) {
-      v = Math.min(v, d[k + NX] + a);
-      if (i < NX - 1) v = Math.min(v, d[k + NX + 1] + b);
-      if (i > 0) v = Math.min(v, d[k + NX - 1] + b);
+  for (let j = NY - 1; j >= 0; j--)
+    for (let i = NX - 1; i >= 0; i--) {
+      const k = j * NX + i;
+      let v = d[k];
+      if (i < NX - 1) v = Math.min(v, d[k + 1] + a);
+      if (j < NY - 1) {
+        v = Math.min(v, d[k + NX] + a);
+        if (i < NX - 1) v = Math.min(v, d[k + NX + 1] + b);
+        if (i > 0) v = Math.min(v, d[k + NX - 1] + b);
+      }
+      d[k] = v;
     }
-    d[k] = v;
-  }
   return d;
 }
 
 // ---------- industrial land ----------
-interface Feature { geometry: { type: string; coordinates: any }; properties: { kind: string; tags?: Record<string, string> } }
+interface Feature {
+  geometry: { type: string; coordinates: any };
+  properties: { kind: string; tags?: Record<string, string> };
+}
 const fc = JSON.parse(readFileSync(inPath, 'utf8')) as { features: Feature[] };
 const ind = new Uint8Array(NX * NY);
 let nPoly = 0;
 for (const f of fc.features) {
   const lu = f.properties.tags?.landuse ?? '';
   if (!['industrial', 'quarry', 'construction', 'brownfield'].includes(lu)) continue;
-  const polys: LonLat[][][] = f.geometry.type === 'Polygon' ? [f.geometry.coordinates]
-    : f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [];
+  const polys: LonLat[][][] =
+    f.geometry.type === 'Polygon'
+      ? [f.geometry.coordinates]
+      : f.geometry.type === 'MultiPolygon'
+        ? f.geometry.coordinates
+        : [];
   for (const rings of polys) {
     if (!rings.length || rings[0].length < 4) continue;
     nPoly++;
-    let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
-    for (const [x, y] of rings[0]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
-    const i0 = cx(x0), i1 = cx(x1), j0 = cy(y0), j1 = cy(y1);
-    let hit = false;
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      if (pointInPolygon(lonOf(i), latOf(j), rings)) { ind[j * NX + i] = 1; hit = true; }
+    let x0 = 180,
+      y0 = 90,
+      x1 = -180,
+      y1 = -90;
+    for (const [x, y] of rings[0]) {
+      x0 = Math.min(x0, x);
+      x1 = Math.max(x1, x);
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
     }
+    const i0 = cx(x0),
+      i1 = cx(x1),
+      j0 = cy(y0),
+      j1 = cy(y1);
+    let hit = false;
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        if (pointInPolygon(lonOf(i), latOf(j), rings)) {
+          ind[j * NX + i] = 1;
+          hit = true;
+        }
+      }
     // slivers narrower than a cell still count
     if (!hit) ind[cy((y0 + y1) / 2) * NX + cx((x0 + x1) / 2)] = 1;
   }
@@ -100,7 +126,8 @@ for (let e = 0; e < g.m; e++) {
   if (!MAJOR.has(ROAD_CLASSES[g.a.edgeClass[e]])) continue;
   const pts = g.polyline(e);
   for (let k = 1; k < pts.length; k++) {
-    const [ax, ay] = pts[k - 1], [bx, by] = pts[k];
+    const [ax, ay] = pts[k - 1],
+      [bx, by] = pts[k];
     const steps = Math.max(1, Math.ceil(g.proj.dist(ax, ay, bx, by) / 20));
     for (let s = 0; s <= steps; s++) {
       const t = s / steps;
@@ -116,8 +143,8 @@ log('busy-road raster done');
 // methane smoke are common, so they count as strong local sources.
 const LANDFILLS: { name: string; lon: number; lat: number }[] = [
   { name: 'Ghazipur landfill', lon: 77.3268, lat: 28.6237 },
-  { name: 'Bhalswa landfill', lon: 77.1615, lat: 28.7400 },
-  { name: 'Okhla landfill', lon: 77.2845, lat: 28.5140 },
+  { name: 'Bhalswa landfill', lon: 77.1615, lat: 28.74 },
+  { name: 'Okhla landfill', lon: 77.2845, lat: 28.514 },
 ];
 
 // ---------- names for industrial areas ----------
@@ -127,7 +154,10 @@ const seen = new Set<string>();
 for (const [name, lon, lat, type] of search) {
   if (!['locality', 'neighbourhood', 'suburb'].includes(type) || name.includes(',')) continue;
   if (!/industrial|udyog vihar|okhla phase/i.test(name)) continue;
-  const key = name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const key = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
   if (seen.has(key)) continue;
   seen.add(key);
   named.push({ name: name.replace(/\s+-\s+/g, ' '), lon, lat });
@@ -138,22 +168,34 @@ log('named areas', areas.length);
 // ---------- per edge ----------
 const M = g.m;
 const A: AirArrays = {
-  indM: new Uint8Array(M), majM: new Uint8Array(M), dumpM: new Uint8Array(M), area: new Int16Array(M),
+  indM: new Uint8Array(M),
+  majM: new Uint8Array(M),
+  dumpM: new Uint8Array(M),
+  area: new Int16Array(M),
 };
 const sample = (d: Float32Array, lon: number, lat: number) => d[cy(lat) * NX + cx(lon)];
-let nearInd = 0, labelled = 0;
+let nearInd = 0,
+  labelled = 0;
 for (let e = 0; e < M; e++) {
   const pts = g.polyline(e);
   // the closest of the two ends and the middle: an edge touching an estate counts
-  let di = 1e9, dm = 1e9;
+  let di = 1e9,
+    dm = 1e9;
   for (const [lon, lat] of [pts[0], g.pointAt(e, 0.5), pts[pts.length - 1]]) {
     di = Math.min(di, sample(indD, lon, lat));
     dm = Math.min(dm, sample(majD, lon, lat));
   }
   if (MAJOR.has(ROAD_CLASSES[g.a.edgeClass[e]])) dm = 0;
   const [mx, my] = g.pointAt(e, 0.5);
-  let dd = 1e9, dumpIdx = -1;
-  LANDFILLS.forEach((l, i) => { const d = g.proj.dist(mx, my, l.lon, l.lat); if (d < dd) { dd = d; dumpIdx = i; } });
+  let dd = 1e9,
+    dumpIdx = -1;
+  LANDFILLS.forEach((l, i) => {
+    const d = g.proj.dist(mx, my, l.lon, l.lat);
+    if (d < dd) {
+      dd = d;
+      dumpIdx = i;
+    }
+  });
   A.indM[e] = Math.min(255, Math.round(di / AIR_CAP.ind));
   A.majM[e] = Math.min(255, Math.round(dm / AIR_CAP.maj));
   A.dumpM[e] = Math.min(255, Math.round(dd / AIR_CAP.dump));
@@ -162,7 +204,13 @@ for (let e = 0; e < M; e++) {
   else if (di <= 300) {
     nearInd++;
     let best = 2500;
-    named.forEach((n, i) => { const d = g.proj.dist(mx, my, n.lon, n.lat); if (d < best) { best = d; area = LANDFILLS.length + i; } });
+    named.forEach((n, i) => {
+      const d = g.proj.dist(mx, my, n.lon, n.lat);
+      if (d < best) {
+        best = d;
+        area = LANDFILLS.length + i;
+      }
+    });
   }
   if (area >= 0) labelled++;
   A.area[e] = area;

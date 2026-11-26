@@ -1,7 +1,7 @@
 {
   "name": "saferaah-air",
   "version": "1.0.0",
-  "description": "SafeRaah Air: an urban air-quality assistant for families in Delhi — clean-air routes, live AQI and the Gemini-powered Saans assistant",
+  "description": "SafeRaah Air: an urban air-quality assistant for families in Delhi \u2014 clean-air routes, live AQI and the Gemini-powered Saans assistant",
   "scripts": {
     "data": "bash pipeline/fetch_delhi.sh",
     "data:fetch": "node scripts/fetch-data.mjs",
@@ -14,7 +14,9 @@
     "test:coverage": "node scripts/fetch-data.mjs && vitest run --coverage",
     "test:e2e": "python3 -I tests/e2e/test_app.py",
     "check": "npm run typecheck && npm run lint && npm test",
-    "cap:sync": "npm run build && cap sync"
+    "cap:sync": "npm run build && cap sync",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "keywords": [],
   "author": "Yash Gupta",
@@ -39,8 +41,10 @@
     "@vitest/coverage-v8": "^5.1.0",
     "axe-core": "^4.14.1",
     "geojson-vt": "^5.0.4",
+    "happy-dom": "^21.0.4",
     "oxlint": "^1.95.0",
     "playwright-core": "^1.65.0",
+    "prettier": "^3.10.1",
     "smp-noto-glyphs": "^2.0.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

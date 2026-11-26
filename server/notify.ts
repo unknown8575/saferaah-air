@@ -37,7 +37,8 @@ export async function sendSms(to: string, message: string): Promise<boolean> {
       return r.ok;
     }
     const r = await fetch(process.env.SMS_WEBHOOK_URL!, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ to: phone, message }),
     });
     return r.ok;
