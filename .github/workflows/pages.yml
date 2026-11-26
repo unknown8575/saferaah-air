@@ -31,7 +31,7 @@ jobs:
           # live trip links, live reports and reviews
           # the SafeRaah server on Google Cloud Run (a repository variable overrides it)
           VITE_API_BASE: ${{ vars.SAFERAAH_API_BASE || 'https://saferaah-87901400101.asia-south1.run.app' }}
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist
