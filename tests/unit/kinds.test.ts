@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { matchIntent, kindLabel, kindCat } from '../../shared/kinds.ts';
+import { matchIntent, kindLabel, kindCat, namesLead } from '../../shared/kinds.ts';
 import { setPlaces, nearbyFor, knownSubs } from '../../web/src/browse.ts';
 import { ist, TRIPS } from '../helpers.ts';
 
@@ -8,6 +8,14 @@ setPlaces(JSON.parse(readFileSync('web/public/data/places.json', 'utf8')));
 const CP = TRIPS.cpIndiaGate.from;
 
 describe('search by kind of place', () => {
+  it('TC-140b a typed place name leads over the kind list; a kind alone does not', () => {
+    expect(namesLead('Khan Market', 'Khan Market')).toBe(true);
+    expect(namesLead('khan market', 'Khan Market Metro')).toBe(true);
+    expect(namesLead('market', 'Market Road')).toBe(false); // a kind word alone lists nearby markets
+    expect(namesLead('medical store', 'Medical Store Lajpat')).toBe(false);
+    expect(namesLead('Khan Market', 'INA Market')).toBe(false);
+    expect(namesLead('Khan Market', undefined)).toBe(false);
+  });
   it('TC-140 everyday words find the right kind, including Hinglish and partial typing', () => {
     expect(matchIntent('gym')?.exact).toContain('fitness_centre');
     expect(matchIntent('Gym near me')?.exact).toContain('fitness_centre');

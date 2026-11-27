@@ -59,6 +59,18 @@ const norm = (s: string) =>
     .trim();
 
 /**
+ * A place's own name was typed ("Khan Market", "Select Citywalk Mall"), not only a kind of place
+ * ("market", "medical store"): matches by name then come before the nearby-kind list.
+ */
+export function namesLead(query: string, topName: string | undefined): boolean {
+  const q = norm(query);
+  if (!topName || !q.includes(' ')) return false;
+  // the name of a kind ("medical store", "medical stores") is a kind, not a place
+  if (INTENTS.some((i) => [...i.words, i.one, i.title].some((w) => norm(w) === q))) return false;
+  return norm(topName).startsWith(q);
+}
+
+/**
  * What kind of place the person is typing about, if any. Matches whole words and
  * prefixes of 3+ letters ("gy" no, "gym" yes, "groc" yes), and a mapped type name.
  */

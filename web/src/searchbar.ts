@@ -1,7 +1,7 @@
 // The search bar and the chips under it (N95 masks, purifiers, parks, metro, hospital).
 import { h, clear } from './dom.ts';
 import { icon, placeIcon } from './icons.ts';
-import { matchIntent } from '../../shared/kinds.ts';
+import { matchIntent, namesLead } from '../../shared/kinds.ts';
 import { CAT_INFO, type PoiCat } from '../../shared/places.ts';
 import { type LonLat } from '../../shared/geo.ts';
 import { S, myLonLat, search, smap, top } from './app.ts';
@@ -54,23 +54,29 @@ function optionRow(run: () => void, ic: string, label: string, note?: string): H
 function suggestions(q: string, done: (then: () => void) => () => void, rerender: () => void): HTMLElement[] {
   const near = (myLonLat() ?? [smap.map.getCenter().lng, smap.map.getCenter().lat]) as LonLat;
   const hits = search.query(q, intentFor(q) ? 4 : 7, near as [number, number]);
-  const items: HTMLElement[] = intentRows(
+  const kinds = intentRows(
     q,
     near,
     (p) => done(() => openBrowsePlace(p))(),
     (it) => done(() => showBrowse(it))(),
     rerender,
   );
-  if (items.length && hits.length) items.push(h('li', { class: 'sect', role: 'presentation' }, 'Places by name'));
-  for (const x of hits)
-    items.push(
-      optionRow(
-        done(() => openHit(x)),
-        placeIcon(x.type),
-        x.name,
-        typeLabel(x.type),
-      ),
-    );
+  const byName = hits.map((x) =>
+    optionRow(
+      done(() => openHit(x)),
+      placeIcon(x.type),
+      x.name,
+      typeLabel(x.type),
+    ),
+  );
+  // "Khan Market" is that market; "market" alone lists the markets near you first
+  const items: HTMLElement[] = namesLead(q, hits[0]?.name)
+    ? [...byName, ...kinds]
+    : [
+        ...kinds,
+        ...(kinds.length && hits.length ? [h('li', { class: 'sect', role: 'presentation' }, 'Places by name')] : []),
+        ...byName,
+      ];
   if (q.length >= 2 && !items.length)
     items.push(
       h(
