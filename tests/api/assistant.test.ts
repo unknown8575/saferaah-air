@@ -179,8 +179,11 @@ describe('Saans API', () => {
   it('TC-194 input is validated and the assistant is rate-limited per phone', async () => {
     expect((await call(base, 'POST', '/api/assistant', { q: '   ', ctx })).status).toBe(400);
     const dev = 'device-limit-00000001';
+    // empty questions are refused without using up the quota
+    for (let i = 0; i < 25; i++) await call(baseNoKey, 'POST', '/api/assistant', { q: ' ', ctx }, dev);
+    expect((await call(baseNoKey, 'POST', '/api/assistant', { q: 'mask?', ctx }, dev)).status).toBe(200);
     let last = 0;
-    for (let i = 0; i < 21; i++)
+    for (let i = 0; i < 20; i++)
       last = (await call(baseNoKey, 'POST', '/api/assistant', { q: 'mask?', ctx }, dev)).status;
     expect(last).toBe(429);
   });

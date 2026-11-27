@@ -40,10 +40,11 @@ export function airRoutes(ctx: Ctx): Routes {
     // Saans assistant. Questions and answers are not logged or stored.
     'POST /api/assistant': async (req) => {
       ctx.device(req);
-      ctx.aiLimit(req);
       const b = obj(await readBody(req));
       const q = typeof b.q === 'string' ? b.q.trim().slice(0, 500) : '';
       if (!q) throw new HttpError(400, 'Ask a question');
+      // counted only for real questions, so an empty send does not use up the asker's quota
+      ctx.aiLimit(req);
       if (!opts.ai) throw new HttpError(503, 'Assistant not configured');
       const a = await opts.ai.answer(q, assistantContext(b.ctx), chatHistory(b.history));
       return {

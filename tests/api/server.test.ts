@@ -381,6 +381,9 @@ describe('privacy: nothing about a trip is kept after it ends', () => {
     });
     expect(late.status).toBe(409);
     expect((await call('POST', `/api/journeys/${j.id}/finish`, { token: j.token })).status).toBe(409);
+    // an ended trip cannot be flipped to SOS (contacts would see an alert with no location)
+    expect((await call('POST', `/api/journeys/${j.id}/sos`, { token: j.token })).status).toBe(409);
+    expect((await call('GET', `/api/share/${j.shareId}`, undefined, null)).body.status).toBe('arrived');
   });
   it('TC-131 answering the questions erases the trip; the vote is anonymous and day-rounded', async () => {
     const { j, fin } = await honestTrip(DEV_B);

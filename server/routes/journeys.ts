@@ -220,6 +220,7 @@ export function journeyRoutes(ctx: Ctx): Routes {
 
     'POST /api/journeys/([\\w-]+)/sos': async (req, m) => {
       const { b, j } = await tripOf(req, m[1]);
+      stillTravelling(j);
       ctx.rateLimit('s:' + j.id);
       ctx.db.prepare(`UPDATE journeys SET status = 'sos' WHERE id = ?`).run(j.id);
       return { ok: true, shareId: j.share_id, smsSent: await relaySms(ctx, j.id, 'sos', b) };
