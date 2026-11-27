@@ -1,4 +1,4 @@
-# Quality gate on every push: types, lint, unit + UI + API tests with coverage thresholds, build, browser smoke tests.
+# Quality gate on every push: types, lint with size/complexity limits, formatting, unit + UI + API tests with coverage thresholds, build, browser smoke tests.
 name: CI
 
 on:
@@ -22,7 +22,10 @@ jobs:
       - name: Dependency audit (fail on high or critical)
         run: npm audit --audit-level=high --omit=dev
       - run: npm run typecheck
-      - run: npm run lint
+      - name: Lint (correctness, no any, file / function size and complexity limits)
+        run: npm run lint
+      - name: Formatting (Prettier)
+        run: npm run format:check
       - run: npm run test:coverage
         env:
           PERF_BUDGET_SCALE: 4
