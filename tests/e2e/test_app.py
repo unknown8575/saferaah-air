@@ -108,6 +108,11 @@ def tc91(b, base):
     page.wait_for_function("() => window.__sr.S.from && window.__sr.S.from.label.includes('Mandi House') && document.querySelector('.route-card')", timeout=30000)
     page.locator('#swap').click()
     page.wait_for_function("() => window.__sr.S.to && window.__sr.S.to.label.includes('Mandi House')", timeout=10000)
+    # keyboard: a typed destination + Enter plans the trip and moves focus to the selected route
+    page.locator('#f-to').fill('Khan Market'); page.keyboard.press('Enter')
+    page.wait_for_function("() => document.activeElement?.classList.contains('route-card')", timeout=30000)
+    assert 'Khan Market' in page.locator('#f-to').input_value()
+    assert page.locator('h1').count() == 1 and 'Khan Market' in (page.locator('h1').text_content() or '')
     ctx.close()
 
 
@@ -271,14 +276,16 @@ def tc102(b, base):
     page.goto(base + '/'); page.wait_for_selector('#q', timeout=20000)
     page.wait_for_function('() => navigator.serviceWorker && navigator.serviceWorker.controller !== undefined', timeout=20000)
     # the app hands its files to the service worker a few seconds after start; wait until the road graph is in
+    # (every same-origin file this page loaded, plus the road graph the worker reads)
     page.wait_for_function("""async () => {
-      let n = 0, graph = false;
-      for (const k of await caches.keys()) if (k.startsWith('saferaah-air-')) {
-        const c = await caches.open(k); n += (await c.keys()).length;
-        if (await c.match(location.origin + '/data/graph.bin')) graph = true;
-      }
-      return graph && n >= 10;
-    }""", timeout=60000, polling=1000)
+      const want = [...new Set(performance.getEntriesByType('resource').map((e) => e.name)
+        .filter((u) => u.startsWith(location.origin) && !u.includes('/api/')))];
+      const have = new Set();
+      for (const k of await caches.keys()) if (k.startsWith('saferaah-air-'))
+        for (const r of await (await caches.open(k)).keys()) have.add(r.url);
+      return have.size >= 10 && have.has(location.origin + '/data/graph.bin') && want.every((u) => have.has(u));
+    }""", timeout=90000, polling=1000)
+    page.wait_for_timeout(1500)
     ctx.set_offline(True)
     page.goto(base + q(CP, IG, mode='walk', simulate=1)); wait_routes(page, timeout=40000)
     assert page.locator('.route-card').count() >= 1
@@ -311,8 +318,8 @@ def tc103(b, base):
         page.wait_for_function(f"() => window.__sr.S.selected === {S['n'] - 1}", timeout=5000)
         expect(page.locator('.route-card').nth(S['n'] - 1)).to_have_class(__import__('re').compile('sel'))
     # switching mode re-plans with that mode
-    page.locator('.mode-tab[data-mode=auto]').click()
-    page.wait_for_function("() => window.__sr.S.settings.mode === 'auto' && window.__sr.S.reply && window.__sr.S.selected === 0", timeout=30000)
+    page.locator('.mode-tab[data-mode=twowheeler]').click()
+    page.wait_for_function("() => window.__sr.S.settings.mode === 'twowheeler' && window.__sr.S.reply && window.__sr.S.selected === 0", timeout=30000)
     ctx.close()
 
 
@@ -541,6 +548,13 @@ def tc147(b, base):
     page.click('#details-btn')
     expect(page.locator('#sheet')).to_contain_text('Air on this route')
     expect(page.locator('#sheet')).to_contain_text('busy roads')
+    # walking the same 5 km in this air: the routes screen warns about the time in it and offers a car
+    page.locator('.back[aria-label="Back to routes"]').click()
+    page.locator('.mode-tab[data-mode=walk]').click(); wait_routes(page)
+    warn = page.locator('.advice', has_text='on foot')
+    expect(warn).to_contain_text('N95', timeout=15000)
+    warn.get_by_role('button', name='Show car / cab routes').click()
+    expect(page.locator('.mode-tab[data-mode=car]')).to_have_attribute('aria-selected', 'true', timeout=15000)
     ctx.close()
 
 

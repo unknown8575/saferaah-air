@@ -40,6 +40,9 @@ Each case is automated. **U** = unit test (vitest, `tests/unit`), **A** = API te
 | TC-28 | U normal | 4 routes computed fast | < 500 ms on the build machine | NFR-1 |
 | TC-29 | U normal | Explanation fields | havens, police share, danger spots with reasons | FR-6 |
 | TC-30 | U normal | Walking at 23:30 is risky everywhere | advice suggests auto with its time | FR-8 |
+| TC-30b | U edge | Route advice with and without a trusted contact | the arrival message is promised only when a contact is saved | FR-8 |
+| TC-30c | U normal/edge | Very poor air (AQI 336), smog trapped, a 2 h 34 min walk; poor / very poor / severe air near each time limit; a car; moderate air; no reading | "Very poor air (AQI 336): 2 h 34 min on foot", smog-trapped note, auto time, N95, suggests a car; warnings from 30 / 15 / 10 min; none for a car, moderate air or no data | FR-33, FR-36 |
+| TC-30d | U normal | No travel mode picked yet; trips of 0.8 km, 3 km, 3+ km | short trips open on foot, longer ones on an auto | FR-8, FR-33 |
 | TC-31 | U normal | Turn-by-turn steps | start step, ≥1 turn, final "arrived"; distances sum ≈ route length | FR-10 |
 | TC-32 | U normal | Whole Delhi: Narela→Najafgarh (scooty), Dwarka→Laxmi Nagar (auto), Mangolpuri→Sultanpuri (walk) | routes found in < 4 s, length between crow-flight and 2.2× | FR-3 |
 | TC-33 | U edge | Real one-way streets on four trips by car/auto/scooty | every one-way segment travelled in its direction (> 20 checked) | FR-2 |
@@ -140,6 +143,7 @@ Each case is automated. **U** = unit test (vitest, `tests/unit`), **A** = API te
 
 | TC-134 | A normal | One person's votes, then a year passes | every street vote has a different pseudonym; all deleted after 365 days | FR-30 |
 | TC-140 | U normal/edge | Kind words: gym, kirana, groc, parlour, chemist, xerox, a mapped type (tattoo); too short (gy); a place name | right kind; null for "gy" and "India Gate" | FR-31 |
+| TC-140b | U edge | "Khan Market" vs "market" vs "medical store" | a typed place name comes before the nearby-kind list; a kind phrase alone still lists places of that kind first | FR-31 |
 | TC-141 | U normal | "gym" near Connaught Place at 7 pm | 5–7 gyms, nearest first, open state for each | FR-31 |
 | TC-142 | U edge | A rare kind (swimming pool) | similar places fill the list, after any exact ones | FR-31 |
 | TC-143 | U normal | Labels and categories for kinds | friendly names; unknown kinds readable | FR-31 |
@@ -148,6 +152,7 @@ Each case is automated. **U** = unit test (vitest, `tests/unit`), **A** = API te
 | TC-146 | E normal | Set up family: 1 child, asthma, car commute | strip shows "1 child · asthma"; plan shows kg CO₂ saved; saved in local storage | FR-36 |
 | TC-147 | E normal | Mayapuri → Janakpuri by auto; open details | every card has an air line; a Cleanest air label or the "also cleanest" note; details show "Air on this route" | FR-33 |
 | TC-148 | E normal | Report sheet | three air kinds in their own group; reporting burning confirms clean-air routes avoid it | FR-35 |
+| TC-151c | U edge | An AQI from a missing or negative reading | throws; bad data never shows as Good air | FR-32 |
 | TC-150–154 | U normal/edge | CPCB breakpoints, PM10 vs PM2.5, forecast parsing, cleanest window, broken responses | exact band values; null on bad data | FR-32 |
 | TC-155–157 | U normal | air.bin round trip; Wazirpur/Ghazipur streets vs quiet streets; dose maths | factors in range; industrial > 1.2, landfill > 1.3 | FR-33 |
 | TC-158–161 | U normal | Clean-air routing on real trips; burning report; air kinds | one cleanest label; cleanest has the lowest dose; burning raises dose but not risk | FR-33, FR-35 |

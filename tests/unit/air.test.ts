@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   naqi,
   bandOf,
+  aqiOf,
   AirField,
   streetFactor,
   streetFactors,
@@ -37,6 +38,11 @@ describe('Indian National AQI (CPCB)', () => {
     expect(a.band).toBe('poor');
     expect(bandOf(0)).toBe('good');
     expect(bandOf(450)).toBe('severe');
+  });
+  it('TC-151c bad readings never show as clean air: aqiOf throws instead of guessing', () => {
+    expect(aqiOf(250, null, 'hourly')).toMatchObject({ band: 'verypoor', basis: 'hourly' });
+    expect(() => aqiOf(Number.NaN, null, 'hourly')).toThrow(RangeError);
+    expect(() => aqiOf(-5, undefined, '24h')).toThrow(RangeError);
   });
 });
 

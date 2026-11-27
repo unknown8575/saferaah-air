@@ -32,7 +32,7 @@ flowchart TB
 |---|---|
 | **Routing on the device** (Web Worker, 25 MB graph cached by the service worker) | The heaviest computation (A* over 533k edges, 5 searches per request, 0.1–0.7 s) never touches the server. 1 user or 1 million users cost the server the same for routing: this is horizontal scaling by design, on hardware the users already own. Works offline. |
 | **Precomputed street data** (`graph.bin`, `air.bin`, typed arrays) | No per-request geometry: the air factor of every street is one array lookup. Building it for the whole city takes ~2 s (raster + chamfer distance transform). |
-| **Static tier on a CDN** | The app shell and data are cache-friendly: hashed bundles are `immutable`, map data `max-age=86400`; the node server keeps gzip copies and ETags in memory (304 on repeat). Bundles are split so a release only re-downloads what changed: app 148 KB, MapLibre 1.08 MB, icons, opening hours, Capacitor, and Saans (lazy). |
+| **Static tier on a CDN** | The app shell and data are cache-friendly: hashed bundles are `immutable`, map data `max-age=86400`; the node server keeps gzip copies and ETags in memory (304 on repeat). Bundles are split so a release only re-downloads what changed: app 155 KB, MapLibre 1.08 MB, icons, opening hours, Capacitor, and Saans (lazy). |
 | **Versioned offline cache** | The service worker keeps two caches named by build hash and data-manifest hash: the shell (cache-first for hashed `/assets/`) and the map data (cache-first). The install step caches only the small shell; the files the first visit already downloaded (including the routing worker's road graph) are copied in from the HTTP cache, so the 25 MB graph is never downloaded twice. Old versions are deleted on activate. |
 | **Stateless AI and air endpoints** | `/api/assistant` and `/api/air` keep no session; any instance can answer any request, so they scale horizontally behind Google's load balancer. |
 | **Thin facts → model** | Gemini receives a ~1.5 KB prompt of computed facts and 3–4 notes, not raw data; answers are short (≤ 140 words). Lower latency and cost. |
@@ -74,4 +74,4 @@ flowchart TB
 
 ### Enforced limits
 
-`oxlint` fails CI on any file over 500 lines, any function over 80 lines, cyclomatic complexity over 20, nesting deeper than 4, more than 8 parameters, or an explicit `any` (tests excepted for the size rules). TypeScript runs with `strict`, `noUnusedLocals`, `noUnusedParameters` and `noFallthroughCasesInSwitch`; Prettier formatting is checked.
+`oxlint` fails CI on any TypeScript file over 500 lines (blank lines and comments not counted), any function over 80 lines, cyclomatic complexity over 20, nesting deeper than 4, more than 8 parameters, or an explicit `any` (tests excepted for the size rules). TypeScript runs with `strict`, `noUnusedLocals`, `noUnusedParameters` and `noFallthroughCasesInSwitch`; Prettier formatting is checked.

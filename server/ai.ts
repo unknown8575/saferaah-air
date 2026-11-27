@@ -126,10 +126,8 @@ const CACHE_MAX = 300;
 const AIR_CACHE_MAX = 200;
 /** Maps keep insertion order, so the first key is the oldest entry. */
 function dropOldest<K, V>(m: Map<K, V>): void {
-  for (const k of m.keys()) {
-    m.delete(k);
-    return;
-  }
+  const first = m.keys().next();
+  if (!first.done) m.delete(first.value);
 }
 const BREAKER_FAILS = 3;
 const BREAKER_MS = 60000;
@@ -176,7 +174,8 @@ export class Ai {
   private takeQuota(): boolean {
     const key = new Date(this.now).toISOString().slice(0, 10);
     const limit = this.cfg.dailyLimit ?? 500;
-    // with a database the count survives restarts and new instances; without one it is in memory
+    // with a database the count survives restarts of the same instance (on Cloud Run the file is
+    // in /tmp, so a new instance starts again from 0); without one it is in memory
     if (this.cfg.counter) return this.cfg.counter('gemini', key) <= limit;
     if (this.day.key !== key) this.day = { key, used: 0 };
     if (this.day.used >= limit) return false;

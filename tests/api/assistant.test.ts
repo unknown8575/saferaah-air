@@ -131,7 +131,15 @@ describe('Saans API', () => {
     expect(g.headers['x-goog-api-key']).toBe('air-test');
     expect((await call(base, 'GET', '/api/air?lat=abc&lon=1')).status).toBe(400);
     // a missing or empty coordinate is an invalid position, not "0" (which would read as outside Delhi)
-    for (const q of ['lat=28.6', 'lon=77.2', 'lat=28.6&lon=', 'lat=&lon=77.2']) {
+    for (const q of [
+      'lat=28.6',
+      'lon=77.2',
+      'lat=28.6&lon=',
+      'lat=&lon=77.2',
+      'lat=0x1C&lon=77.2',
+      'lat=2.86e1&lon=77.2',
+      'lat= 28.6&lon=77.2',
+    ]) {
       const bad = await call(base, 'GET', `/api/air?${q}`);
       expect(bad.status).toBe(400);
       expect(bad.body.error).toBe('Invalid position');

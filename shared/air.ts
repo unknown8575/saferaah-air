@@ -243,9 +243,14 @@ export function aqiFrom(pm25: number | null | undefined, pm10?: number | null, b
   const v = Math.round(main === 'PM10' ? b : a);
   return { value: v, band: bandOf(v), main, ...(basis ? { basis } : {}) };
 }
-/** The AQI of a reading whose PM2.5 is a known number (never null; an unusable value reads as 0). */
+/**
+ * The AQI of a reading the caller has already checked. Bad data must never show as clean air,
+ * so an unusable reading throws instead of falling back to a value.
+ */
 export function aqiOf(pm25: number, pm10: number | null | undefined, basis: Aqi['basis']): Aqi {
-  return aqiFrom(pm25, pm10, basis) ?? { value: 0, band: 'good', main: 'PM2.5', ...(basis ? { basis } : {}) };
+  const a = aqiFrom(pm25, pm10, basis);
+  if (!a) throw new RangeError('AQI needs a valid PM2.5 or PM10 reading');
+  return a;
 }
 export function bandOf(aqi: number): AqiBand {
   for (const b of BAND_ORDER) if (aqi <= AQI_BANDS[b].range[1]) return b;
