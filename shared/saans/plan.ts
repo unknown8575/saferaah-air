@@ -1,7 +1,16 @@
 // The numbers behind Saans: a day plan from the hourly forecast and the family's
 // situation, purifier sizing and travel swaps. All arithmetic is done here, in code,
 // so the language model only has to explain results it is given — never compute them.
-import { AQI_BANDS, bandOf, naqi, cleanestWindow, type AirNow, type AirHour, type AqiBand } from '../air.ts';
+import {
+  AQI_BANDS,
+  bandOf,
+  naqi,
+  cleanestWindow,
+  type AirNow,
+  type AirHour,
+  type AqiBand,
+  type Weather,
+} from '../air.ts';
 
 export type Travel = 'walk' | 'cycle' | 'twowheeler' | 'auto' | 'car' | 'bus' | 'metro';
 export const TRAVEL_LABEL: Record<Travel, string> = {
@@ -119,84 +128,79 @@ function worstWindow(hours: AirHour[], len = 2): { start: string; end: string; p
   return w;
 }
 
-/**
- * A plain-language plan for the next day, with the numbers that justify each step.
- * `family` is null when the user hasn't described their family: then nothing personal is
- * assumed (a typical 12 m² bedroom is used for purifier sizing and said to be typical).
- */
-export function dayPlan(air: AirNow | null, family: Family | null): DayPlan {
-  const items: PlanItem[] = [];
-  const facts: string[] = [];
-  const fam = family ?? DEFAULT_FAMILY;
-  const room = family ? `your ${fam.bedroomM2} m² bedroom` : `a typical ${fam.bedroomM2} m² bedroom`;
-  const who = !family
-    ? []
-    : [
-        fam.children ? 'children' : '',
-        fam.elders ? 'elders' : '',
-        fam.asthma ? 'someone with asthma' : '',
-        fam.pregnant ? 'a pregnancy' : '',
-      ].filter(Boolean);
-  const sensitive = who.length > 0;
-  if (!air) {
-    facts.push('No live air reading is available right now.');
-    return {
-      aqi: null,
-      band: null,
-      verdict: 'Live air data is not available, so this plan uses general advice.',
-      best: null,
-      worst: null,
-      items: generalItems(fam, room),
-      facts,
-    };
-  }
-  const band = air.aqi.band;
-  const B = AQI_BANDS[band];
-  facts.push(
-    air.aqi.basis === '24h' && air.avg24
-      ? `AQI ${air.aqi.value} (${B.label}; Indian National AQI from the 24-hour average, CPCB method: PM2.5 ${Math.round(air.avg24.pm25)}, PM10 ${Math.round(air.avg24.pm10)} µg/m³). This hour: PM2.5 ${Math.round(air.pm25)} µg/m³ (${air.source}).`
-      : `AQI about ${air.aqi.value} (${B.label}; hourly estimate, not the official 24-hour AQI), PM2.5 ${Math.round(air.pm25)} µg/m³, PM10 ${Math.round(air.pm10)} µg/m³ (${air.source}).`,
-  );
-  facts.push(`PM2.5 this hour is ${(air.pm25 / 15).toFixed(1)}× the WHO 24-hour guideline (15 µg/m³).`);
+/** Everything the plan steps below need to know, worked out once. */
+interface PlanInput {
+  air: AirNow;
+  /** the family as described by the user, or null */
+  family: Family | null;
+  /** the family used for sizing (a typical one when not set) */
+  fam: Family;
+  room: string;
+  band: AqiBand;
+  best: ReturnType<typeof cleanestWindow>;
+  worst: ReturnType<typeof worstWindow>;
+  bestL: DayPlan['best'];
+  worstL: DayPlan['worst'];
+  /** the forecast's first date, to say "tomorrow" for later windows */
+  today: string | undefined;
+  /** % less PM2.5 per breath in the best hours than in the worst */
+  cut: number;
+}
+
+function aqiFact(air: AirNow): string {
+  const B = AQI_BANDS[air.aqi.band];
+  return air.aqi.basis === '24h' && air.avg24
+    ? `AQI ${air.aqi.value} (${B.label}; Indian National AQI from the 24-hour average, CPCB method: PM2.5 ${Math.round(air.avg24.pm25)}, PM10 ${Math.round(air.avg24.pm10)} µg/m³). This hour: PM2.5 ${Math.round(air.pm25)} µg/m³ (${air.source}).`
+    : `AQI about ${air.aqi.value} (${B.label}; hourly estimate, not the official 24-hour AQI), PM2.5 ${Math.round(air.pm25)} µg/m³, PM10 ${Math.round(air.pm10)} µg/m³ (${air.source}).`;
+}
+
+function weatherFacts(wx: Weather): string[] {
+  const n = wx.now;
+  const bits = [
+    n.tempC !== null ? `${Math.round(n.tempC)} °C` : '',
+    n.humidity !== null ? `humidity ${Math.round(n.humidity)}%` : '',
+    n.windMs !== null ? `wind ${n.windMs.toFixed(1)} m/s` : '',
+    n.blhM !== null ? `mixing layer ~${Math.round(n.blhM / 10) * 10} m` : '',
+    n.visibilityM !== null ? `visibility ${(n.visibilityM / 1000).toFixed(1)} km` : '',
+  ].filter(Boolean);
+  const why = wx.smog.reasons.length ? ` (${wx.smog.reasons.join('; ')})` : '';
+  const out = [`Weather now: ${bits.join(', ')}. Smog trap now: ${wx.smog.level}${why}.`];
+  if (wx.nextTrap)
+    out.push(
+      `Smog is forecast to be trapped (inversion / calm air) from ${hourLabel(wx.nextTrap.start)} to ${hourLabel(wx.nextTrap.end)}.`,
+    );
+  return out;
+}
+
+/** The facts Saans may quote about the air itself. */
+function airFacts(p: PlanInput): string[] {
+  const { air, bestL, worstL } = p;
+  const facts = [
+    aqiFact(air),
+    `PM2.5 this hour is ${(air.pm25 / 15).toFixed(1)}× the WHO 24-hour guideline (15 µg/m³).`,
+  ];
   if (air.ground)
     facts.push(
       `Nearby community sensors: median PM2.5 ${air.ground.pm25} µg/m³ from ${air.ground.sensors} sensors (low-cost, uncorrected; they read high in humid air).`,
     );
-  const wx = air.weather;
-  if (wx) {
-    const n = wx.now;
-    const bits = [
-      n.tempC !== null ? `${Math.round(n.tempC)} °C` : '',
-      n.humidity !== null ? `humidity ${Math.round(n.humidity)}%` : '',
-      n.windMs !== null ? `wind ${n.windMs.toFixed(1)} m/s` : '',
-      n.blhM !== null ? `mixing layer ~${Math.round(n.blhM / 10) * 10} m` : '',
-      n.visibilityM !== null ? `visibility ${(n.visibilityM / 1000).toFixed(1)} km` : '',
-    ].filter(Boolean);
-    facts.push(
-      `Weather now: ${bits.join(', ')}. Smog trap now: ${wx.smog.level}${wx.smog.reasons.length ? ` (${wx.smog.reasons.join('; ')})` : ''}.`,
-    );
-    if (wx.nextTrap)
-      facts.push(
-        `Smog is forecast to be trapped (inversion / calm air) from ${hourLabel(wx.nextTrap.start)} to ${hourLabel(wx.nextTrap.end)}.`,
-      );
-  }
-  const best = cleanestWindow(air.hours, 2);
-  const worst = worstWindow(air.hours, 2);
-  const today = air.hours[0]?.time.slice(0, 10);
-  const lbl = (w: { start: string; end: string }) =>
-    (w.start.slice(0, 10) !== today ? 'tomorrow ' : '') + windowLabel(w.start, w.end);
-  const bestL = best ? { label: lbl(best), pm25: Math.round(best.pm25) } : null;
-  const worstL = worst ? { label: lbl(worst), pm25: Math.round(worst.pm25) } : null;
+  if (air.weather) facts.push(...weatherFacts(air.weather));
   if (bestL)
     facts.push(
       `Cleanest 2 hours in the next day (6 am–10 pm): ${bestL.label}, about ${bestL.pm25} µg/m³ PM2.5 (AQI ${naqi(bestL.pm25).value}).`,
     );
   if (worstL) facts.push(`Worst 2 hours in the next day: ${worstL.label}, about ${worstL.pm25} µg/m³.`);
-  const cut =
-    best && worst && worst.pm25 > 0 ? Math.max(0, Math.min(95, Math.round((1 - best.pm25 / worst.pm25) * 100))) : 0;
+  if (bestL && worstL && p.cut >= 5)
+    facts.push(
+      `Being outside at ${bestL.label} instead of ${worstL.label} means about ${p.cut}% less PM2.5 per breath.`,
+    );
+  return facts;
+}
 
-  // 1. time outdoor activity
-  if (bestL) {
+/** When to go out, and when to stay in. */
+function timingItems(p: PlanInput): PlanItem[] {
+  const { band, bestL, worstL, cut } = p;
+  const items: PlanItem[] = [];
+  if (bestL)
     items.push({
       id: 'window',
       icon: 'sun',
@@ -207,12 +211,7 @@ export function dayPlan(air: AirNow | null, family: Family | null): DayPlan {
         : 'Good time for a walk, play or exercise.',
       impact: cut >= 5 && worstL ? `${cut}% less PM2.5 per breath than in the worst hours` : undefined,
     });
-    if (cut >= 5 && worstL)
-      facts.push(
-        `Being outside at ${bestL.label} instead of ${worstL.label} means about ${cut}% less PM2.5 per breath.`,
-      );
-  }
-  if (worstL && atLeast(band, 'moderate')) {
+  if (worstL && atLeast(band, 'moderate'))
     items.push({
       id: 'avoid',
       icon: 'moon',
@@ -220,58 +219,64 @@ export function dayPlan(air: AirNow | null, family: Family | null): DayPlan {
       title: 'Stay in if you can',
       detail: `The forecast's dirtiest hours (about ${worstL.pm25} µg/m³).`,
     });
-  }
-  // smog trap: the weather, not just the forecast number, decides when to seal the house
+  return items;
+}
+
+/** Smog trap: the weather, not just the forecast number, decides when to seal the house. */
+function trapItem(wx: Weather | null | undefined): PlanItem | null {
   if (wx && (wx.smog.level === 'high' || wx.smog.level === 'severe')) {
-    items.push({
+    const why = wx.smog.reasons[0];
+    return {
       id: 'trap',
       icon: 'wind',
       when: 'Now',
       title: wx.smog.inversion ? 'Inversion now: smog is trapped near the ground' : 'Calm air: smog is building up',
-      detail: `Windows shut, purifier on, no outdoor exercise. ${wx.smog.reasons[0] ? wx.smog.reasons[0][0].toUpperCase() + wx.smog.reasons[0].slice(1) + '.' : ''}`,
-    });
-  } else if (wx?.nextTrap) {
-    items.push({
-      id: 'trap',
-      icon: 'moon',
-      when: `${hourLabel(wx.nextTrap.start)} – ${hourLabel(wx.nextTrap.end)}`,
-      title: 'Smog trap coming: keep windows shut',
-      detail: 'Calm, cold air will hold smoke near the ground. Air the house before then; run the purifier through it.',
-    });
+      detail: `Windows shut, purifier on, no outdoor exercise. ${why ? why[0].toUpperCase() + why.slice(1) + '.' : ''}`,
+    };
   }
+  if (!wx?.nextTrap) return null;
+  return {
+    id: 'trap',
+    icon: 'moon',
+    when: `${hourLabel(wx.nextTrap.start)} – ${hourLabel(wx.nextTrap.end)}`,
+    title: 'Smog trap coming: keep windows shut',
+    detail: 'Calm, cold air will hold smoke near the ground. Air the house before then; run the purifier through it.',
+  };
+}
 
-  // 2. exercise
-  if (atLeast(band, 'poor')) {
-    items.push({
+/** Exercise and masks, from "poor" air up. */
+function outdoorItems(p: PlanInput): PlanItem[] {
+  if (!atLeast(p.band, 'poor')) return [];
+  return [
+    {
       id: 'exercise',
       icon: 'activity',
       title: 'Move workouts indoors',
       detail: 'Hard exercise multiplies the air you breathe; skip runs beside busy roads.',
-    });
-  }
-  // 3. masks
-  if (atLeast(band, 'poor')) {
-    items.push({
+    },
+    {
       id: 'mask',
       icon: 'wind',
       title: 'Wear a fitted N95 outside',
-      detail: fam.children
+      detail: p.fam.children
         ? 'Child-size N95 only for children old enough to wear it well; none under 2.'
         : 'Cloth and loose surgical masks let most fine dust through.',
-    });
-  }
-  // 4. purifier + windows
-  const cadr = purifierCadr(fam.bedroomM2);
-  facts.push(`Purifier for ${room} (3 m ceiling, 5 air changes/hour): CADR about ${cadr} m³/h.`);
-  if (atLeast(band, 'moderate')) {
+    },
+  ];
+}
+
+/** Purifier, airing the house and the kitchen. */
+function homeItems(p: PlanInput): PlanItem[] {
+  const { fam, family, room, best, today } = p;
+  const items: PlanItem[] = [];
+  if (atLeast(p.band, 'moderate'))
     items.push({
       id: 'purifier',
       icon: 'fan',
       when: 'Night',
       title: 'Purifier on in the bedroom',
-      detail: `Doors and windows shut. For ${room}, pick a CADR of at least ${cadr} m³/h.`,
+      detail: `Doors and windows shut. For ${room}, pick a CADR of at least ${purifierCadr(fam.bedroomM2)} m³/h.`,
     });
-  }
   if (best)
     items.push({
       id: 'air-out',
@@ -280,65 +285,128 @@ export function dayPlan(air: AirNow | null, family: Family | null): DayPlan {
       title: 'Air out the house for 10–15 min',
       detail: 'Lets out cooking fumes and stale air while outdoor air is at its best.',
     });
-  // 5. kitchen
-  if (family && (fam.cooking === 'wood' || fam.cooking === 'kerosene')) {
-    items.push({
-      id: 'fuel',
-      icon: 'cook',
-      title: `Cook on LPG or induction instead of ${fam.cooking}`,
-      detail: 'Solid-fuel and kerosene smoke is one of the largest indoor exposures.',
-    });
-  } else {
-    items.push({
-      id: 'cook',
-      icon: 'cook',
-      title: 'Chimney on, window open while frying',
-      detail: 'A tadka can push kitchen PM2.5 above the outdoor level for a while.',
-    });
-  }
-  // 6. sensitive family members
-  if (sensitive) {
+  const dirtyFuel = family && (fam.cooking === 'wood' || fam.cooking === 'kerosene');
+  items.push(
+    dirtyFuel
+      ? {
+          id: 'fuel',
+          icon: 'cook',
+          title: `Cook on LPG or induction instead of ${fam.cooking}`,
+          detail: 'Solid-fuel and kerosene smoke is one of the largest indoor exposures.',
+        }
+      : {
+          id: 'cook',
+          icon: 'cook',
+          title: 'Chimney on, window open while frying',
+          detail: 'A tadka can push kitchen PM2.5 above the outdoor level for a while.',
+        },
+  );
+  return items;
+}
+
+/** Steps only a described family gets: sensitive members and the commute. */
+function familyItems(p: PlanInput): { items: PlanItem[]; facts: string[] } {
+  const { family } = p;
+  if (!family) return { items: [], facts: [] };
+  const who = [
+    family.children ? 'children' : '',
+    family.elders ? 'elders' : '',
+    family.asthma ? 'someone with asthma' : '',
+    family.pregnant ? 'a pregnancy' : '',
+  ].filter(Boolean);
+  const advice = AQI_BANDS[p.band].advice;
+  const items: PlanItem[] = [];
+  const facts: string[] = [];
+  if (who.length)
     items.push({
       id: 'family',
       icon: 'health',
       title: `Extra care for ${who.join(', ')}`,
-      detail: fam.asthma ? 'Reliever inhaler at hand, preventer as prescribed. ' + B.advice : B.advice,
+      detail: family.asthma ? 'Reliever inhaler at hand, preventer as prescribed. ' + advice : advice,
     });
+  const s = family.commute ? commuteSwaps(family.commute)[0] : undefined;
+  if (family.commute && s) {
+    const km = family.commute.km;
+    items.push({
+      id: 'swap',
+      icon: 'leaf',
+      title: `Try the ${TRAVEL_LABEL[s.to]} for your ${km} km commute`,
+      detail: `Instead of the ${TRAVEL_LABEL[s.from]}.`,
+      impact: `≈${s.kgPerMonth} kg less CO₂ a month (${s.pct}% less)`,
+    });
+    facts.push(
+      `Commute swap: ${km} km each way by ${TRAVEL_LABEL[s.from]} → ${TRAVEL_LABEL[s.to]} saves about ${s.kgPerMonth} kg CO₂ a month (${s.pct}% less; 22 working days).`,
+    );
   }
-  // 7. commute
-  if (family && fam.commute) {
-    const sw = commuteSwaps(fam.commute);
-    if (sw.length) {
-      const s = sw[0];
-      items.push({
-        id: 'swap',
-        icon: 'leaf',
-        title: `Try the ${TRAVEL_LABEL[s.to]} for your ${fam.commute.km} km commute`,
-        detail: `Instead of the ${TRAVEL_LABEL[s.from]}.`,
-        impact: `≈${s.kgPerMonth} kg less CO₂ a month (${s.pct}% less)`,
-      });
-      facts.push(
-        `Commute swap: ${fam.commute.km} km each way by ${TRAVEL_LABEL[s.from]} → ${TRAVEL_LABEL[s.to]} saves about ${s.kgPerMonth} kg CO₂ a month (${s.pct}% less; 22 working days).`,
-      );
-    }
-  }
-  const verdict = `${B.label} air (AQI ${air.aqi.value}). ${B.advice}`;
-  // most personal and most useful first: the UI shows the top few
-  const order = [
-    'trap',
-    'window',
-    'family',
-    'mask',
-    'purifier',
-    'swap',
-    'fuel',
-    'avoid',
-    'exercise',
-    'air-out',
-    'cook',
+  return { items, facts };
+}
+
+function planInput(air: AirNow, family: Family | null): PlanInput {
+  const fam = family ?? DEFAULT_FAMILY;
+  const best = cleanestWindow(air.hours, 2);
+  const worst = worstWindow(air.hours, 2);
+  const today = air.hours[0]?.time.slice(0, 10);
+  const lbl = (w: { start: string; end: string }) =>
+    (w.start.slice(0, 10) !== today ? 'tomorrow ' : '') + windowLabel(w.start, w.end);
+  const cut =
+    best && worst && worst.pm25 > 0 ? Math.max(0, Math.min(95, Math.round((1 - best.pm25 / worst.pm25) * 100))) : 0;
+  return {
+    air,
+    family,
+    fam,
+    room: roomName(family),
+    band: air.aqi.band,
+    best,
+    worst,
+    bestL: best ? { label: lbl(best), pm25: Math.round(best.pm25) } : null,
+    worstL: worst ? { label: lbl(worst), pm25: Math.round(worst.pm25) } : null,
+    today,
+    cut,
+  };
+}
+
+const roomName = (family: Family | null) =>
+  family ? `your ${family.bedroomM2} m² bedroom` : `a typical ${DEFAULT_FAMILY.bedroomM2} m² bedroom`;
+
+/** most personal and most useful first: the UI shows the top few */
+const ORDER = ['trap', 'window', 'family', 'mask', 'purifier', 'swap', 'fuel', 'avoid', 'exercise', 'air-out', 'cook'];
+
+/**
+ * A plain-language plan for the next day, with the numbers that justify each step.
+ * `family` is null when the user hasn't described their family: then nothing personal is
+ * assumed (a typical 12 m² bedroom is used for purifier sizing and said to be typical).
+ */
+export function dayPlan(air: AirNow | null, family: Family | null): DayPlan {
+  if (!air)
+    return {
+      aqi: null,
+      band: null,
+      verdict: 'Live air data is not available, so this plan uses general advice.',
+      best: null,
+      worst: null,
+      items: generalItems(family ?? DEFAULT_FAMILY, roomName(family)),
+      facts: ['No live air reading is available right now.'],
+    };
+  const p = planInput(air, family);
+  const fam = familyItems(p);
+  const trap = trapItem(air.weather);
+  const items = [...timingItems(p), ...(trap ? [trap] : []), ...outdoorItems(p), ...homeItems(p), ...fam.items];
+  items.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
+  const facts = [
+    ...airFacts(p),
+    `Purifier for ${p.room} (3 m ceiling, 5 air changes/hour): CADR about ${purifierCadr(p.fam.bedroomM2)} m³/h.`,
+    ...fam.facts,
   ];
-  items.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  return { aqi: air.aqi.value, band, verdict, best: bestL, worst: worstL, items, facts };
+  const B = AQI_BANDS[p.band];
+  return {
+    aqi: air.aqi.value,
+    band: p.band,
+    verdict: `${B.label} air (AQI ${air.aqi.value}). ${B.advice}`,
+    best: p.bestL,
+    worst: p.worstL,
+    items,
+    facts,
+  };
 }
 
 function generalItems(fam: Family, room: string): PlanItem[] {

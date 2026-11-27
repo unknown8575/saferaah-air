@@ -146,13 +146,39 @@ export interface RiskField {
 
 const BAND_IDX = (h: number) => (h >= 6 && h < 18 ? 0 : h >= 18 && h < 22 ? 1 : 2);
 
-export function computeRisk(g: Graph, ctx: RiskContext): RiskField {
-  const w = ctx.weights ?? weightsFor(ctx.profile);
-  const dark = darkness(ctx.when);
-  const hour = istTime(ctx.when).hour;
-  const band = BAND_IDX(hour);
-  const tau = timeScale(ctx.when);
+const COMMERCE = new Set(['shop', 'food', 'pharmacy', 'fuel']);
 
+/** S_open (0..1, below 0 with liquor outlets) and the count of open shops within 50 m. */
+function openPlaces(g: Graph, e: number, pois: Poi[], poiOpen: Uint8Array): { S: number; commerce: number } {
+  let haven = 0;
+  let commerce = 0;
+  for (const pid of g.edgePois(e)) {
+    if (!poiOpen[pid]) continue;
+    const p = pois[pid];
+    haven += CAT_INFO[p.cat].haven;
+    if (COMMERCE.has(p.cat)) commerce++;
+  }
+  // liquor outlets can push this below 0 (worse than nothing open)
+  return { S: Math.max(-0.3, 1 - Math.exp(-haven / 1.5)), commerce };
+}
+
+/** P_auth: police within ~150 m is full credit, fading out by 1 km; metro security helps while open. */
+function authority(policeM: number, stationM: number, hour: number): number {
+  const P = Math.max(0, Math.min(1, 1 - (policeM - 150) / 850));
+  const stationOpen = hour >= 5.5 && hour < 23.5;
+  return stationOpen && stationM < 250 ? Math.min(1, P + 0.4) : P;
+}
+
+/** Isolation from the road class and green/water/vacant land flags (bits 1, 4, 2). */
+function isolation(cls: RoadClass, greenBits: number): number {
+  let I = ISO_CLASS[cls] ?? 0;
+  if (greenBits & 1) I = Math.max(I, 0.9);
+  if (greenBits & 4) I = Math.max(I, 0.8);
+  if (greenBits & 2) I = Math.max(I, 0.5);
+  return I;
+}
+
+function poiStates(ctx: RiskContext): { poiOpen: Uint8Array; poiVerified: Uint8Array } {
   const poiOpen = new Uint8Array(ctx.pois.length);
   const poiVerified = new Uint8Array(ctx.pois.length);
   for (let i = 0; i < ctx.pois.length; i++) {
@@ -160,47 +186,33 @@ export function computeRisk(g: Graph, ctx: RiskContext): RiskField {
     poiOpen[i] = s.open ? 1 : 0;
     poiVerified[i] = s.verified ? 1 : 0;
   }
+  return { poiOpen, poiVerified };
+}
 
+export function computeRisk(g: Graph, ctx: RiskContext): RiskField {
+  const w = ctx.weights ?? weightsFor(ctx.profile);
+  const dark = darkness(ctx.when);
+  const hour = istTime(ctx.when).hour;
+  const band = BAND_IDX(hour);
+  const tau = timeScale(ctx.when);
+  const { poiOpen, poiVerified } = poiStates(ctx);
+  const base = w.open + w.auth + w.busy + w.lit + w.iso;
   const risk = new Float32Array(g.m);
   const a = g.a;
   for (let e = 0; e < g.m; e++) {
     const cls = ROAD_CLASSES[a.edgeClass[e]];
-    // S_open: open havens within 50 m
-    let haven = 0,
-      commerce = 0;
-    for (const pid of g.edgePois(e)) {
-      if (!poiOpen[pid]) continue;
-      const p = ctx.pois[pid];
-      haven += CAT_INFO[p.cat].haven;
-      if (p.cat === 'shop' || p.cat === 'food' || p.cat === 'pharmacy' || p.cat === 'fuel') commerce++;
-    }
-    // liquor outlets can push this below 0 (worse than nothing open)
-    const S = Math.max(-0.3, 1 - Math.exp(-haven / 1.5));
-    // P_auth: police within ~150 m is full credit, fades out by 1 km; metro security helps while open
-    const pm = a.edgePoliceM[e];
-    let P = Math.max(0, Math.min(1, 1 - (pm - 150) / 850));
-    const stationOpen = hour >= 5.5 && hour < 23.5;
-    if (stationOpen && a.edgeStationM[e] < 250) P = Math.min(1, P + 0.4);
+    const { S, commerce } = openPlaces(g, e, ctx.pois, poiOpen);
+    const P = authority(a.edgePoliceM[e], a.edgeStationM[e], hour);
     // C_busy: road-type activity + buildings + open commerce
-    const act = ACTIVITY[cls]?.[band] ?? 0.3;
-    const C = 0.55 * act + 0.2 * Math.min(1, a.edgeBldg[e] / 30) + 0.25 * Math.min(1, commerce / 4);
-    // L_lit
+    const C =
+      0.55 * (ACTIVITY[cls]?.[band] ?? 0.3) + 0.2 * Math.min(1, a.edgeBldg[e] / 30) + 0.25 * Math.min(1, commerce / 4);
     const L = LIT[cls] ?? 0.4;
-    // isolation
-    const gb = a.edgeGreen[e];
-    let I = ISO_CLASS[cls] ?? 0;
-    if (gb & 1) I = Math.max(I, 0.9);
-    if (gb & 4) I = Math.max(I, 0.8);
-    if (gb & 2) I = Math.max(I, 0.5);
-    // T_child traffic
-    const T = TRAFFIC[cls] ?? 0;
-    const U = crowdDanger(ctx.crowd?.get(e));
-
+    const I = isolation(cls, a.edgeGreen[e]);
     // Environmental risk, scaled by how much the hour itself matters: a quiet lane at
     // 1 pm is a much smaller concern than the same lane at 11 pm.
-    const base = w.open + w.auth + w.busy + w.lit + w.iso;
     const env = (w.open * (1 - S) + w.auth * (1 - P) + w.busy * (1 - C) + w.lit * dark * (1 - L) + w.iso * I) / base;
-    let r = tau * env + w.traffic * T + w.crowd * U + (ctx.live?.get(e) ?? 0);
+    const r =
+      tau * env + w.traffic * (TRAFFIC[cls] ?? 0) + w.crowd * crowdDanger(ctx.crowd?.get(e)) + (ctx.live?.get(e) ?? 0);
     risk[e] = Math.max(0, Math.min(1, r));
   }
   return { risk, poiOpen, poiVerified, darkness: dark };

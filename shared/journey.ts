@@ -68,29 +68,37 @@ export class JourneyMonitor {
     const prev = this.fixes[this.fixes.length - 1];
     if (prev && f.t <= prev.t) return ev; // out-of-order / duplicate
     if (f.acc > 150) {
+      // too vague to judge position
       this.fixes.push(f);
       return this.timeChecks(f.t, ev);
-    } // too vague to judge position
-    if (prev) {
-      const dt = (f.t - prev.t) / 3600000;
-      const kmh = dt > 0 ? haversine(prev.lon, prev.lat, f.lon, f.lat) / 1000 / dt : 0;
-      if (kmh > MAX_KMH[this.plan.mode] * 1.6 && haversine(prev.lon, prev.lat, f.lon, f.lat) > 80) {
-        this.jumps++;
-        ev.push({ type: 'gps_jump', speedKmh: Math.round(kmh) });
-      }
     }
+    if (prev) this.checkJump(prev, f, ev);
     this.fixes.push(f);
     if (this.arrivedAt) return ev;
-
-    // arrival
     const dDest = this.proj.dist(f.lon, f.lat, this.plan.dest[0], this.plan.dest[1]);
     if (dDest <= arrivalRadius(f.acc)) {
       this.arrivedAt = f.t;
       ev.push({ type: 'arrived', at: f.t });
       return ev;
     }
+    this.checkOffRoute(f, ev);
+    this.checkStopped(f, ev);
+    return this.timeChecks(f.t, ev);
+  }
 
-    // off route: 3 consecutive fixes beyond 50 m (+ accuracy)
+  /** a fix faster than the mode allows, and far away, is a GPS jump */
+  private checkJump(prev: Fix, f: Fix, ev: JourneyEvent[]): void {
+    const dt = (f.t - prev.t) / 3600000;
+    const d = haversine(prev.lon, prev.lat, f.lon, f.lat);
+    const kmh = dt > 0 ? d / 1000 / dt : 0;
+    if (kmh > MAX_KMH[this.plan.mode] * 1.6 && d > 80) {
+      this.jumps++;
+      ev.push({ type: 'gps_jump', speedKmh: Math.round(kmh) });
+    }
+  }
+
+  /** off route: 3 consecutive fixes beyond 50 m (+ accuracy) */
+  private checkOffRoute(f: Fix, ev: JourneyEvent[]): void {
     const dRoute = pointPolylineDist(this.proj, [f.lon, f.lat], this.plan.route);
     if (dRoute > 50 + Math.min(f.acc, 50)) {
       this.offCount++;
@@ -98,31 +106,31 @@ export class JourneyMonitor {
         this.isOff = true;
         ev.push({ type: 'off_route', distM: Math.round(dRoute) });
       }
-    } else {
-      this.offCount = 0;
-      if (this.isOff) {
-        this.isOff = false;
-        ev.push({ type: 'back_on_route' });
-      }
+      return;
     }
+    this.offCount = 0;
+    if (this.isOff) {
+      this.isOff = false;
+      ev.push({ type: 'back_on_route' });
+    }
+  }
 
-    // stationary detection: stayed within 30 m of an anchor
-    if (
-      !this.stopAnchor ||
-      this.proj.dist(f.lon, f.lat, this.stopAnchor.lon, this.stopAnchor.lat) > 30 + Math.min(f.acc, 30)
-    ) {
+  /** stationary detection: stayed within 30 m of an anchor for longer than the limit */
+  private checkStopped(f: Fix, ev: JourneyEvent[]): void {
+    const a = this.stopAnchor;
+    if (!a || this.proj.dist(f.lon, f.lat, a.lon, a.lat) > 30 + Math.min(f.acc, 30)) {
       this.stopAnchor = f;
       this.stopAlerted = false;
-    } else if (!this.stopAlerted) {
-      const minutes = (f.t - this.stopAnchor.t) / 60000;
-      const risky = this.onRiskySegment(f);
-      const limit = risky ? (this.plan.stopMinRisky ?? 4) : (this.plan.stopMinSafe ?? 10);
-      if (minutes >= limit) {
-        this.stopAlerted = true;
-        ev.push({ type: 'stopped', minutes: Math.round(minutes), onRiskySegment: risky });
-      }
+      return;
     }
-    return this.timeChecks(f.t, ev);
+    if (this.stopAlerted) return;
+    const minutes = (f.t - a.t) / 60000;
+    const risky = this.onRiskySegment(f);
+    const limit = risky ? (this.plan.stopMinRisky ?? 4) : (this.plan.stopMinSafe ?? 10);
+    if (minutes >= limit) {
+      this.stopAlerted = true;
+      ev.push({ type: 'stopped', minutes: Math.round(minutes), onRiskySegment: risky });
+    }
   }
 
   /** Call periodically even without GPS (e.g. every 30 s) for the overdue check. */

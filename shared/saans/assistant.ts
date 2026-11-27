@@ -6,7 +6,7 @@
 //
 // The model never calculates: every number it may use is in FACTS, and it is told to
 // cite notes as [n]. compose() gives a useful, specific answer without any model.
-import { AQI_BANDS, type AirNow } from '../air.ts';
+import { AQI_BANDS, type AirNow, type AqiBand } from '../air.ts';
 import { NOTES, CLUSTERS, type Cluster, type Note } from './knowledge.ts';
 import { NoteIndex } from './retrieve.ts';
 import { matchIntent, type Intent as PlaceIntent } from '../kinds.ts';
@@ -237,137 +237,186 @@ const firstSentences = (t: string, n = 2) =>
     .slice(0, n)
     .join(' ');
 
+/** What every built-in answer is written from. */
+interface Draft {
+  q: string;
+  ctx: AssistantContext;
+  notes: Note[];
+  plan: DayPlan;
+  band: AqiBand | null;
+  /** one line on the air right now */
+  lead: string;
+  /** the family used for sizing (typical when not set) and whether the user set it */
+  fam: Family;
+  own: boolean;
+  room: string;
+}
+
+const distText = (m: number) => (m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`);
+
+function placesAnswer(d: Draft): string[] {
+  const { notes, q } = d;
+  const pl = d.ctx.places;
+  if (!pl)
+    return [
+      'Turn on location (or mark where you are on the map) and ask again, and I will list the nearest ones. Your location stays on your phone.',
+    ];
+  if (!pl.items.length)
+    return [
+      `I could not find ${pl.title.toLowerCase()} mapped near you. Map data in some areas is thin; try a nearby market.`,
+    ];
+  const open = pl.items.filter((p) => p.open);
+  const lines = [`${pl.title} near you${open.length ? ` (${open.length} open now)` : ''}:`];
+  for (const p of pl.items.slice(0, 5)) {
+    const state = p.open === null ? '' : p.open ? ', open' : ', closed';
+    lines.push(`• ${p.name} — ${distText(p.distM)}${state}${p.similar ? ` (${p.kind.toLowerCase()})` : ''}`);
+  }
+  if (/plant|nurser/i.test(pl.title))
+    lines.push(
+      `• Plants are lovely, but they don't clean room air measurably; for that use a purifier${cite(notes, 'plants')}.`,
+    );
+  if (/purifier/i.test(pl.title))
+    lines.push(
+      `• Pick a CADR of at least ${purifierCadr(d.fam.bedroomM2)} m³/h for ${d.room}${cite(notes, 'purifier-size')}.`,
+    );
+  if (/medical/i.test(pl.title) && /mask|n95/i.test(q))
+    lines.push(`• Ask for a fitted N95 (not cloth or loose surgical)${cite(notes, 'mask')}.`);
+  return lines;
+}
+
+function planAnswer(d: Draft): string[] {
+  return [
+    `${d.lead} Here is your day${cite(d.notes, 'timing')}:`,
+    ...d.plan.items
+      .slice(0, 6)
+      .map((it) => `• ${it.when ? it.when + ' — ' : ''}${it.title}${it.impact ? ` (${it.impact})` : ''}`),
+  ];
+}
+
+function purifierAnswer(d: Draft): string[] {
+  const lines = [
+    `For ${d.room}, choose a purifier with a CADR of at least ${purifierCadr(d.fam.bedroomM2)} m³/h${cite(d.notes, 'purifier-size')}.`,
+  ];
+  if (!d.own) lines.push('• Set your room size in the family profile for an exact number.');
+  lines.push('• Run it with the door and windows shut, all night on medium.');
+  lines.push(`• True HEPA (H13) filter; skip ionizer or ozone models${cite(d.notes, 'purifier-care')}.`);
+  lines.push(`• Living room of 20 m²? Aim for about ${purifierCadr(20)} m³/h.`);
+  if (d.band && !atLeast(d.band, 'moderate')) lines.push('• Today the air is fairly clean, so it can run on low.');
+  return lines;
+}
+
+/** What to say about the route the user picked (or about routes in general). */
+function routeLines(d: Draft): string[] {
+  const r = d.ctx.route;
+  const c = cite(d.notes, 'quiet-streets');
+  if (!r)
+    return [
+      `Plan a trip and pick the "Cleanest air" route: it keeps you off busy roads and away from industrial areas and landfills${c}.`,
+    ];
+  if (r.pctLess >= 3)
+    return [
+      `Your ${r.label.toLowerCase()} route breathes about ${r.pctLess}% less PM2.5 than the fastest one${c}.`,
+      ...(r.avoided.length ? [`• It keeps away from ${r.avoided.join(', ')}.`] : []),
+      `• ${r.minutes} min by ${r.mode}.`,
+    ];
+  return [
+    `On this trip the fastest route is already about the cleanest: less time outside beats a long detour${c}.`,
+    ...(r.areas.length ? [`• It passes ${r.areas.join(', ')}; keep windows up there.`] : []),
+  ];
+}
+
+function routeAnswer(d: Draft): string[] {
+  const lines = routeLines(d);
+  if (d.plan.best) lines.push(`• Cleanest time to travel today: ${d.plan.best.label}.`);
+  if (d.band && atLeast(d.band, 'poor')) lines.push(`• Wear a fitted N95 if you walk or ride${cite(d.notes, 'mask')}.`);
+  return lines;
+}
+
+function commuteLines(d: Draft): string[] {
+  const { fam, notes } = d;
+  if (!d.own || !fam.commute)
+    return [
+      `Small swaps that clean the air you share${cite(notes, 'co2-modes')}:`,
+      '• Metro instead of a solo car trip: about 80% less CO₂ per km.',
+    ];
+  const sw = commuteSwaps(fam.commute);
+  return [
+    sw.length
+      ? `Your biggest swap is the commute${cite(notes, 'co2-modes')}:`
+      : `Your ${TRAVEL_LABEL[fam.commute.mode]} commute is already low-carbon${cite(notes, 'co2-modes')}.`,
+    ...sw.map(
+      (s) =>
+        `• ${cap(TRAVEL_LABEL[s.to])} instead of ${TRAVEL_LABEL[s.from]}: ≈${s.kgPerMonth} kg CO₂ less a month (${s.pct}% less).`,
+    ),
+  ];
+}
+
+function swapsAnswer(d: Draft): string[] {
+  const { fam, notes } = d;
+  const lines = [
+    ...commuteLines(d),
+    `• Engine off at long red lights${cite(notes, 'idling')}.`,
+    `• Compost leaves and waste; never burn them${cite(notes, 'burning')}.`,
+  ];
+  if (d.own && (fam.cooking === 'wood' || fam.cooking === 'kerosene'))
+    lines.push(`• Switch from ${fam.cooking} to LPG or induction${cite(notes, 'cooking-fuel')}.`);
+  return lines;
+}
+
+function maskAnswer(d: Draft): string[] {
+  const lines = [
+    `${d.lead} ${firstSentences(d.notes.find((n) => n.id === 'mask')?.text ?? '', 2)}${cite(d.notes, 'mask')}`,
+  ];
+  if (d.own && d.fam.children) lines.push('• For children: a child-size N95 only if it fits; no masks under 2.');
+  if (d.band && !atLeast(d.band, 'poor')) lines.push('• Today a mask is optional for short trips.');
+  return lines;
+}
+
+function generalAnswer(d: Draft): string[] {
+  const [top, second] = d.notes;
+  if (!top)
+    return [
+      `${d.lead} I help with clean air: daily plans, indoor air, cleaner routes and greener swaps. Try "Plan my day".`,
+    ];
+  const lines = [`${firstSentences(top.text, 2)} [1]`];
+  if (second && second.cluster === top.cluster) lines.push(`• ${second.title}: ${firstSentences(second.text, 1)} [2]`);
+  if (d.ctx.air && d.band) lines.push(`• ${d.lead}${d.plan.best ? ` Cleanest hours: ${d.plan.best.label}.` : ''}`);
+  return lines;
+}
+
+const WRITERS: Record<Intent, (d: Draft) => string[]> = {
+  places: placesAnswer,
+  plan: planAnswer,
+  purifier: purifierAnswer,
+  route: routeAnswer,
+  swaps: swapsAnswer,
+  mask: maskAnswer,
+  general: generalAnswer,
+};
+
 /** A specific answer built from the plan and notes, without a language model. */
 export function compose(q: string, ctx: AssistantContext, notes = groundingNotes(q)): Answer {
   const plan = dayPlan(ctx.air, ctx.family);
-  const intent = intentOf(q, ctx);
-  const lines: string[] = [];
   const air = ctx.air;
   const band = plan.band;
-  const lead =
-    air && band
-      ? `Right now: AQI ${air.aqi.value}, ${AQI_BANDS[band].label.toLowerCase()}.`
-      : 'I could not get a live air reading, so this is general advice.';
   const fam = ctx.family ?? DEFAULT_FAMILY;
   const own = ctx.family !== null;
-  const room = own ? `your ${fam.bedroomM2} m² bedroom` : `a typical ${fam.bedroomM2} m² bedroom`;
-
-  switch (intent) {
-    case 'places': {
-      const pl = ctx.places;
-      if (!pl) {
-        lines.push(
-          'Turn on location (or mark where you are on the map) and ask again, and I will list the nearest ones. Your location stays on your phone.',
-        );
-        break;
-      }
-      if (!pl.items.length) {
-        lines.push(
-          `I could not find ${pl.title.toLowerCase()} mapped near you. Map data in some areas is thin; try a nearby market.`,
-        );
-        break;
-      }
-      const open = pl.items.filter((p) => p.open);
-      lines.push(`${pl.title} near you${open.length ? ` (${open.length} open now)` : ''}:`);
-      for (const p of pl.items.slice(0, 5))
-        lines.push(
-          `• ${p.name} — ${p.distM < 1000 ? `${p.distM} m` : `${(p.distM / 1000).toFixed(1)} km`}${p.open === null ? '' : p.open ? ', open' : ', closed'}${p.similar ? ` (${p.kind.toLowerCase()})` : ''}`,
-        );
-      if (/plant|nurser/i.test(pl.title))
-        lines.push(
-          `• Plants are lovely, but they don't clean room air measurably; for that use a purifier${cite(notes, 'plants')}.`,
-        );
-      if (/purifier/i.test(pl.title))
-        lines.push(
-          `• Pick a CADR of at least ${purifierCadr(fam.bedroomM2)} m³/h for ${room}${cite(notes, 'purifier-size')}.`,
-        );
-      if (/medical/i.test(pl.title) && /mask|n95/i.test(q))
-        lines.push(`• Ask for a fitted N95 (not cloth or loose surgical)${cite(notes, 'mask')}.`);
-      break;
-    }
-    case 'plan': {
-      lines.push(`${lead} Here is your day${cite(notes, 'timing')}:`);
-      for (const it of plan.items.slice(0, 6))
-        lines.push(`• ${it.when ? it.when + ' — ' : ''}${it.title}${it.impact ? ` (${it.impact})` : ''}`);
-      break;
-    }
-    case 'purifier': {
-      const cadr = purifierCadr(fam.bedroomM2);
-      lines.push(`For ${room}, choose a purifier with a CADR of at least ${cadr} m³/h${cite(notes, 'purifier-size')}.`);
-      if (!own) lines.push('• Set your room size in the family profile for an exact number.');
-      lines.push('• Run it with the door and windows shut, all night on medium.');
-      lines.push(`• True HEPA (H13) filter; skip ionizer or ozone models${cite(notes, 'purifier-care')}.`);
-      lines.push(`• Living room of 20 m²? Aim for about ${purifierCadr(20)} m³/h.`);
-      if (band && !atLeast(band, 'moderate')) lines.push('• Today the air is fairly clean, so it can run on low.');
-      break;
-    }
-    case 'route': {
-      const r = ctx.route;
-      if (r && r.pctLess >= 3) {
-        lines.push(
-          `Your ${r.label.toLowerCase()} route breathes about ${r.pctLess}% less PM2.5 than the fastest one${cite(notes, 'quiet-streets')}.`,
-        );
-        if (r.avoided.length) lines.push(`• It keeps away from ${r.avoided.join(', ')}.`);
-        lines.push(`• ${r.minutes} min by ${r.mode}.`);
-      } else if (r) {
-        lines.push(
-          `On this trip the fastest route is already about the cleanest: less time outside beats a long detour${cite(notes, 'quiet-streets')}.`,
-        );
-        if (r.areas.length) lines.push(`• It passes ${r.areas.join(', ')}; keep windows up there.`);
-      } else {
-        lines.push(
-          `Plan a trip and pick the "Cleanest air" route: it keeps you off busy roads and away from industrial areas and landfills${cite(notes, 'quiet-streets')}.`,
-        );
-      }
-      if (plan.best) lines.push(`• Cleanest time to travel today: ${plan.best.label}.`);
-      if (band && atLeast(band, 'poor')) lines.push(`• Wear a fitted N95 if you walk or ride${cite(notes, 'mask')}.`);
-      break;
-    }
-    case 'swaps': {
-      if (own && fam.commute) {
-        const sw = commuteSwaps(fam.commute);
-        lines.push(
-          sw.length
-            ? `Your biggest swap is the commute${cite(notes, 'co2-modes')}:`
-            : `Your ${TRAVEL_LABEL[fam.commute.mode]} commute is already low-carbon${cite(notes, 'co2-modes')}.`,
-        );
-        for (const s of sw)
-          lines.push(
-            `• ${cap(TRAVEL_LABEL[s.to])} instead of ${TRAVEL_LABEL[s.from]}: ≈${s.kgPerMonth} kg CO₂ less a month (${s.pct}% less).`,
-          );
-      } else {
-        lines.push(`Small swaps that clean the air you share${cite(notes, 'co2-modes')}:`);
-        lines.push('• Metro instead of a solo car trip: about 80% less CO₂ per km.');
-      }
-      lines.push(`• Engine off at long red lights${cite(notes, 'idling')}.`);
-      lines.push(`• Compost leaves and waste; never burn them${cite(notes, 'burning')}.`);
-      if (own && (fam.cooking === 'wood' || fam.cooking === 'kerosene'))
-        lines.push(`• Switch from ${fam.cooking} to LPG or induction${cite(notes, 'cooking-fuel')}.`);
-      break;
-    }
-    case 'mask': {
-      lines.push(`${lead} ${firstSentences(notes.find((n) => n.id === 'mask')?.text ?? '', 2)}${cite(notes, 'mask')}`);
-      if (own && fam.children) lines.push('• For children: a child-size N95 only if it fits; no masks under 2.');
-      if (band && !atLeast(band, 'poor')) lines.push('• Today a mask is optional for short trips.');
-      break;
-    }
-    default: {
-      const top = notes[0];
-      if (!top) {
-        lines.push(
-          `${lead} I help with clean air: daily plans, indoor air, cleaner routes and greener swaps. Try "Plan my day".`,
-        );
-        break;
-      }
-      lines.push(`${firstSentences(top.text, 2)} [1]`);
-      const second = notes[1];
-      if (second && second.cluster === top.cluster)
-        lines.push(`• ${second.title}: ${firstSentences(second.text, 1)} [2]`);
-      if (air && band) lines.push(`• ${lead}${plan.best ? ` Cleanest hours: ${plan.best.label}.` : ''}`);
-    }
-  }
+  const draft: Draft = {
+    q,
+    ctx,
+    notes,
+    plan,
+    band,
+    lead:
+      air && band
+        ? `Right now: AQI ${air.aqi.value}, ${AQI_BANDS[band].label.toLowerCase()}.`
+        : 'I could not get a live air reading, so this is general advice.',
+    fam,
+    own,
+    room: own ? `your ${fam.bedroomM2} m² bedroom` : `a typical ${fam.bedroomM2} m² bedroom`,
+  };
   return {
-    text: lines.join('\n'),
+    text: WRITERS[intentOf(q, ctx)](draft).join('\n'),
     notes: notes.map((n, i) => ({ n: i + 1, id: n.id, title: n.title, source: n.source })),
     cluster: noteIndex().clusterOf(q),
     plan,

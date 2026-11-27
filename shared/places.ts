@@ -48,34 +48,36 @@ export const CAT_INFO: Record<PoiCat, { label: string; icon: string; haven: numb
   liquor: { label: 'Liquor shop / bar', icon: '🍺', haven: -0.5 },
 };
 
+/** OSM tag values that decide a category, in priority order (the first match wins). */
+const POI_RULES: [PoiCat, (t: Record<string, string>, kind?: string) => boolean][] = [
+  ['police', (t) => t.amenity === 'police'],
+  ['hospital', (t) => t.amenity === 'hospital' || t.healthcare === 'hospital'],
+  ['clinic', (t) => ['clinic', 'doctors', 'dentist'].includes(t.amenity) || t.healthcare === 'clinic'],
+  ['pharmacy', (t) => t.amenity === 'pharmacy' || t.shop === 'chemist' || t.healthcare === 'pharmacy'],
+  ['clinic', (t) => t.amenity === 'blood_bank'],
+  [
+    'govt',
+    (t) =>
+      ['public_building', 'courthouse', 'townhall', 'post_office'].includes(t.amenity) || t.office === 'government',
+  ],
+  [
+    'station',
+    (t, kind) =>
+      kind === 'station' || t.railway === 'station' || t.station === 'subway' || t.public_transport === 'station',
+  ],
+  ['fuel', (t) => t.amenity === 'fuel'],
+  ['hotel', (t) => ['hotel', 'guest_house', 'hostel'].includes(t.tourism)],
+  ['liquor', (t) => t.shop === 'alcohol' || ['bar', 'pub', 'nightclub'].includes(t.amenity)],
+  ['food', (t) => ['restaurant', 'fast_food', 'cafe', 'ice_cream', 'food_court'].includes(t.amenity)],
+  ['bank', (t) => t.amenity === 'bank'],
+  ['atm', (t) => t.amenity === 'atm' || t.amenity === 'bureau_de_change'],
+  ['worship', (t) => t.amenity === 'place_of_worship'],
+  ['shop', (t) => !!t.shop],
+];
+
 /** Categorise OSM tags into a POI category (null = not a safety-relevant place). */
 export function poiCategory(t: Record<string, string>, kind?: string): PoiCat | null {
-  const a = t.amenity,
-    s = t.shop;
-  if (a === 'police') return 'police';
-  if (a === 'hospital' || t.healthcare === 'hospital') return 'hospital';
-  if (a === 'clinic' || a === 'doctors' || a === 'dentist' || t.healthcare === 'clinic') return 'clinic';
-  if (a === 'pharmacy' || s === 'chemist' || t.healthcare === 'pharmacy') return 'pharmacy';
-  if (a === 'blood_bank') return 'clinic';
-  if (
-    a === 'public_building' ||
-    a === 'courthouse' ||
-    a === 'townhall' ||
-    a === 'post_office' ||
-    t.office === 'government'
-  )
-    return 'govt';
-  if (kind === 'station' || t.railway === 'station' || t.station === 'subway' || t.public_transport === 'station')
-    return 'station';
-  if (a === 'fuel') return 'fuel';
-  if (t.tourism === 'hotel' || t.tourism === 'guest_house' || t.tourism === 'hostel') return 'hotel';
-  if (s === 'alcohol' || a === 'bar' || a === 'pub' || a === 'nightclub') return 'liquor';
-  if (a === 'restaurant' || a === 'fast_food' || a === 'cafe' || a === 'ice_cream' || a === 'food_court') return 'food';
-  if (a === 'bank') return 'bank';
-  if (a === 'atm' || a === 'bureau_de_change') return 'atm';
-  if (a === 'place_of_worship') return 'worship';
-  if (s) return 'shop';
-  return null;
+  return POI_RULES.find(([, test]) => test(t, kind))?.[0] ?? null;
 }
 
 /**

@@ -24,40 +24,16 @@ export const RC: Record<RoadClass, number> = Object.fromEntries(ROAD_CLASSES.map
   number
 >;
 
-/** Map an OSM highway=* value to our road class (null = not routable). */
+/** OSM highway=* values that are not ours as-is; everything else unknown is not routable. */
+const HIGHWAY_ALIAS: Record<string, RoadClass> = { road: 'unclassified', corridor: 'footway' };
+const OWN_CLASSES = new Set<string>(ROAD_CLASSES.filter((c) => c !== 'other'));
+
+/** Map an OSM highway=* value to our road class (null = not routable: busways, platforms, construction...). */
 export function roadClassOf(highway: string | undefined): RoadClass | null {
   if (!highway) return null;
   const h = highway.replace(/_link$/, '');
-  switch (h) {
-    case 'motorway':
-    case 'trunk':
-    case 'primary':
-    case 'secondary':
-    case 'tertiary':
-    case 'unclassified':
-    case 'residential':
-    case 'living_street':
-    case 'service':
-    case 'pedestrian':
-    case 'footway':
-    case 'path':
-    case 'steps':
-    case 'track':
-    case 'cycleway':
-      return h;
-    case 'road':
-      return 'unclassified';
-    case 'corridor':
-      return 'footway';
-    case 'busway':
-    case 'bus_stop':
-    case 'construction':
-    case 'proposed':
-    case 'platform':
-      return null;
-    default:
-      return null;
-  }
+  if (OWN_CLASSES.has(h)) return h as RoadClass;
+  return HIGHWAY_ALIAS[h] ?? null;
 }
 
 export type Mode = 'walk' | 'twowheeler' | 'auto' | 'car';

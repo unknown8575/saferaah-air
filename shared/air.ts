@@ -271,37 +271,55 @@ export interface AirNow {
   ground?: { pm25: number; sensors: number; source: string } | null;
 }
 
-/** Parse an Open-Meteo air-quality response (hourly pm2_5 / pm10, local time; ask with past_days=1). */
-export function parseOpenMeteo(j: any, now: Date = new Date()): AirNow | null {
-  const t: string[] = j?.hourly?.time ?? [];
-  const p25: (number | null)[] = j?.hourly?.pm2_5 ?? [];
-  const p10: (number | null)[] = j?.hourly?.pm10 ?? [];
-  const off = (j?.utc_offset_seconds ?? 19800) * 1000;
+/** The shape of an Open-Meteo air-quality response (only the fields read here). */
+interface OpenMeteoAir {
+  utc_offset_seconds?: number;
+  hourly?: { time?: string[]; pm2_5?: (number | null)[]; pm10?: (number | null)[] };
+  current?: { pm2_5?: number | null; pm10?: number | null };
+}
+
+/** Index of the hour that contains `now` (times are local wall-clock, ISO without zone). */
+function hourIndex(times: { time: string }[], now: Date, utcOffsetS: number | undefined): number {
+  const localNow = new Date(now.getTime() + (utcOffsetS ?? 19800) * 1000).toISOString().slice(0, 13);
+  const i = times.findIndex((h) => h.time.slice(0, 13) >= localNow);
+  return i < 0 ? times.length - 1 : i;
+}
+
+function airHours(j: OpenMeteoAir): AirHour[] {
+  const t = j.hourly?.time ?? [];
+  const p25 = j.hourly?.pm2_5 ?? [];
+  const p10 = j.hourly?.pm10 ?? [];
   const hours: AirHour[] = [];
   for (let i = 0; i < t.length; i++) {
-    const a = p25[i],
-      b = p10[i];
-    if (!valid(a) || !valid(b)) continue;
-    hours.push({ time: t[i], pm25: a, pm10: b });
+    const a = p25[i];
+    const b = p10[i];
+    if (valid(a) && valid(b)) hours.push({ time: t[i], pm25: a, pm10: b });
   }
-  if (!hours.length) return null;
-  // the hour that contains `now` (times are local wall-clock, ISO without zone)
-  const localNow = new Date(now.getTime() + off).toISOString().slice(0, 13);
-  let i = hours.findIndex((h) => h.time.slice(0, 13) >= localNow);
-  if (i < 0) i = hours.length - 1;
-  const cur = valid(j?.current?.pm2_5)
-    ? { pm25: j.current.pm2_5 as number, pm10: valid(j.current.pm10) ? (j.current.pm10 as number) : hours[i].pm10 }
-    : hours[i];
-  // CPCB: PM2.5 / PM10 sub-indices use 24-hour averages, valid with at least 16 hours of data
+  return hours;
+}
+
+/** CPCB: PM2.5 / PM10 sub-indices use 24-hour averages, valid with at least 16 hours of data. */
+function average24(hours: AirHour[], i: number): AirNow['avg24'] {
   const past = hours.slice(Math.max(0, i - 23), i + 1);
+  if (past.length < 16) return undefined;
   const avg = (k: 'pm25' | 'pm10') => past.reduce((s, h) => s + h[k], 0) / past.length;
-  const has24 = past.length >= 16;
-  const avg24 = has24 ? { pm25: avg('pm25'), pm10: avg('pm10'), hours: past.length } : undefined;
+  return { pm25: avg('pm25'), pm10: avg('pm10'), hours: past.length };
+}
+
+/** Parse an Open-Meteo air-quality response (hourly pm2_5 / pm10, local time; ask with past_days=1). */
+export function parseOpenMeteo(input: unknown, now: Date = new Date()): AirNow | null {
+  const j = (input ?? {}) as OpenMeteoAir;
+  const hours = airHours(j);
+  if (!hours.length) return null;
+  const i = hourIndex(hours, now, j.utc_offset_seconds);
+  const c = j.current;
+  const cur = valid(c?.pm2_5) ? { pm25: c.pm2_5, pm10: valid(c.pm10) ? c.pm10 : hours[i].pm10 } : hours[i];
+  const avg24 = average24(hours, i);
   return {
     at: hours[i].time,
     pm25: cur.pm25,
     pm10: cur.pm10,
-    aqi: (has24 ? aqiFrom(avg24!.pm25, avg24!.pm10, '24h') : aqiFrom(cur.pm25, cur.pm10, 'hourly'))!,
+    aqi: (avg24 ? aqiFrom(avg24.pm25, avg24.pm10, '24h') : aqiFrom(cur.pm25, cur.pm10, 'hourly'))!,
     avg24,
     hours: hours.slice(i, i + 24),
     source: 'CAMS forecast via Open-Meteo',
@@ -377,10 +395,36 @@ export function smogOf(h: WeatherHour): Weather['smog'] {
   return { level, inversion, stagnant, reasons };
 }
 
+type Series = (number | null | undefined)[] | undefined;
+/** The shape of an Open-Meteo weather forecast (only the fields read here). */
+interface OpenMeteoWeather {
+  utc_offset_seconds?: number;
+  hourly?: {
+    time?: string[];
+    temperature_2m?: Series;
+    relative_humidity_2m?: Series;
+    wind_speed_10m?: Series;
+    wind_direction_10m?: Series;
+    visibility?: Series;
+    boundary_layer_height?: Series;
+    temperature_925hPa?: Series;
+  };
+}
+
+/** The first run of high/severe smog hours ahead, if any. */
+function nextTrapIn(next: WeatherHour[]): Weather['nextTrap'] {
+  const first = next.findIndex((h) => ['high', 'severe'].includes(smogOf(h).level));
+  if (first < 0) return null;
+  let last = first;
+  while (last + 1 < next.length && ['high', 'severe'].includes(smogOf(next[last + 1]).level)) last++;
+  return { start: next[first].time, end: next[last].time };
+}
+
 /** Parse an Open-Meteo forecast response (hourly weather, local time). */
-export function parseWeather(j: any, now: Date = new Date()): Weather | null {
-  const H = j?.hourly;
-  const t: string[] = H?.time ?? [];
+export function parseWeather(input: unknown, now: Date = new Date()): Weather | null {
+  const j = (input ?? {}) as OpenMeteoWeather;
+  const H = j.hourly ?? {};
+  const t = H.time ?? [];
   if (!t.length) return null;
   const hours: WeatherHour[] = t.map((time, k) => ({
     time,
@@ -392,36 +436,31 @@ export function parseWeather(j: any, now: Date = new Date()): Weather | null {
     blhM: num(H.boundary_layer_height?.[k]),
     temp925C: num(H.temperature_925hPa?.[k]),
   }));
-  const off = (j?.utc_offset_seconds ?? 19800) * 1000;
-  const localNow = new Date(now.getTime() + off).toISOString().slice(0, 13);
-  let i = hours.findIndex((h) => h.time.slice(0, 13) >= localNow);
-  if (i < 0) i = hours.length - 1;
+  const i = hourIndex(hours, now, j.utc_offset_seconds);
   const next = hours.slice(i, i + 24);
-  let trap: Weather['nextTrap'] = null;
-  for (let k = 0; k < next.length; k++) {
-    const sm = smogOf(next[k]);
-    if (sm.level === 'high' || sm.level === 'severe') {
-      if (!trap) trap = { start: next[k].time, end: next[k].time };
-      else trap.end = next[k].time;
-    } else if (trap) break;
-  }
-  return { now: hours[i], smog: smogOf(hours[i]), nextTrap: trap, hours: next };
+  return { now: hours[i], smog: smogOf(hours[i]), nextTrap: nextTrapIn(next), hours: next };
+}
+
+/** One Sensor.Community station reading (only the fields read here). */
+interface SensorReading {
+  id?: number | string;
+  sensor?: { id?: number | string };
+  sensordatavalues?: { value_type?: string; value?: unknown }[];
 }
 
 /** Median PM2.5 of nearby Sensor.Community stations (readings in µg/m³; obviously broken values dropped). */
-export function parseSensors(list: any[]): { pm25: number; sensors: number; source: string } | null {
+export function parseSensors(input: unknown): { pm25: number; sensors: number; source: string } | null {
   const vals: number[] = [];
   const seen = new Set<string>();
-  for (const s of Array.isArray(list) ? list : []) {
+  for (const s of (Array.isArray(input) ? input : []) as SensorReading[]) {
     const id = String(s?.sensor?.id ?? s?.id ?? Math.random());
     if (seen.has(id)) continue;
-    for (const v of s?.sensordatavalues ?? []) {
-      const x = Number(v?.value);
-      if (v?.value_type === 'P2' && Number.isFinite(x) && x > 0 && x < 1000) {
-        vals.push(x);
-        seen.add(id);
-      }
-    }
+    const ok = (s?.sensordatavalues ?? [])
+      .filter((v) => v?.value_type === 'P2')
+      .map((v) => Number(v.value))
+      .filter((x) => Number.isFinite(x) && x > 0 && x < 1000);
+    if (ok.length) seen.add(id);
+    vals.push(...ok);
   }
   if (vals.length < 2) return null;
   vals.sort((a, b) => a - b);
