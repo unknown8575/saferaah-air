@@ -81,6 +81,58 @@ export function openBrowsePlace(p: BrowsePlace) {
 }
 
 /** All places of a kind near you, as a list and pins (like the category chips). */
+type Found = ReturnType<typeof nearbyFor>[number];
+
+/** One result: tap the row for its card, or the arrow for directions. */
+function browseRow(p: Found): HTMLElement {
+  const directions = () => {
+    S.to = browsePlace(p);
+    S.from = null;
+    S.userPicked = false;
+    hooks.openDirections();
+  };
+  return h(
+    'li',
+    null,
+    h(
+      'button',
+      { class: 'place-row', on: { click: () => openBrowsePlace(p) } },
+      h('span', { class: `pi cat-${kindCat(p.sub)}` }, icon(subIcon(p.sub), 18)),
+      h(
+        'div',
+        null,
+        h('b', null, p.name),
+        h('small', null, `${p.similar ? 'Similar: ' : ''}${p.label} · ${fmtDist(p.distM)}`),
+      ),
+      h(
+        'span',
+        { class: `open-pill ${p.open ? 'yes' : 'no'}` },
+        p.open ? (p.verified ? 'Open' : 'Likely open') : 'Closed',
+      ),
+    ),
+    h(
+      'button',
+      { class: 'btn small go', 'aria-label': `Directions to ${p.name}`, on: { click: directions } },
+      icon('navigate', 18),
+    ),
+  );
+}
+
+function browseHeading(it: Intent, exact: number, nearMe: boolean): HTMLElement {
+  return h(
+    'div',
+    { class: 'list-head' },
+    h('h2', null, exact ? `${it.title} nearby` : `Places like a ${it.one}`),
+    h(
+      'div',
+      { class: 'meta' },
+      exact
+        ? `Nearest to ${nearMe ? 'you' : 'the map centre'}, open state at ${clockText(now())}`
+        : `No ${it.one} is mapped near ${nearMe ? 'you' : 'here'}, so these are the closest similar places.`,
+    ),
+  );
+}
+
 export function showBrowse(it: Intent) {
   if (!placesReady()) {
     loadPlaces(BASE).then(() => showBrowse(it));
@@ -95,7 +147,6 @@ export function showBrowse(it: Intent) {
   S.category = { key: `kind:${it.title}`, title: it.title, items: [] };
   hooks.renderSearchTop();
   const res = nearbyFor(it, center, now(), { min: 8, max: 25 });
-  const exact = res.filter((p) => !p.similar).length;
   smap.setHits(
     res.map((p) => ({
       lon: p.lon,
@@ -110,61 +161,11 @@ export function showBrowse(it: Intent) {
   clear(
     sheet,
     h('div', { class: 'grip' }),
-    h(
-      'div',
-      { class: 'list-head' },
-      h('h2', null, exact ? `${it.title} nearby` : `Places like a ${it.one}`),
-      h(
-        'div',
-        { class: 'meta' },
-        exact
-          ? `Nearest to ${me && center === me ? 'you' : 'the map centre'}, open state at ${clockText(now())}`
-          : `No ${it.one} is mapped near ${me && center === me ? 'you' : 'here'}, so these are the closest similar places.`,
-      ),
-    ),
+    browseHeading(it, res.filter((p) => !p.similar).length, !!me && center === me),
     h(
       'ul',
       { class: 'places' },
-      res.length
-        ? res.map((p) =>
-            h(
-              'li',
-              null,
-              h(
-                'button',
-                { class: 'place-row', on: { click: () => openBrowsePlace(p) } },
-                h('span', { class: `pi cat-${kindCat(p.sub)}` }, icon(subIcon(p.sub), 18)),
-                h(
-                  'div',
-                  null,
-                  h('b', null, p.name),
-                  h('small', null, `${p.similar ? 'Similar: ' : ''}${p.label} · ${fmtDist(p.distM)}`),
-                ),
-                h(
-                  'span',
-                  { class: `open-pill ${p.open ? 'yes' : 'no'}` },
-                  p.open ? (p.verified ? 'Open' : 'Likely open') : 'Closed',
-                ),
-              ),
-              h(
-                'button',
-                {
-                  class: 'btn small go',
-                  'aria-label': `Directions to ${p.name}`,
-                  on: {
-                    click: () => {
-                      S.to = browsePlace(p);
-                      S.from = null;
-                      S.userPicked = false;
-                      hooks.openDirections();
-                    },
-                  },
-                },
-                icon('navigate', 18),
-              ),
-            ),
-          )
-        : h('li', { class: 'empty' }, 'Nothing like this is mapped within 15 km yet.'),
+      res.length ? res.map(browseRow) : h('li', { class: 'empty' }, 'Nothing like this is mapped within 15 km yet.'),
     ),
     h('p', { class: 'note' }, 'Places come from OpenStreetMap; some shops may be missing or have moved.'),
   );

@@ -1,0 +1,245 @@
+{
+  "palette": {
+    "day": {
+      "bg": "#f2f2ef",
+      "water": "#a9d1f2",
+      "green": "#cfe7c4",
+      "wood": "#c4e0b8",
+      "landuse": "#ecebe6",
+      "bldg": "#e5e4df",
+      "bldgLine": "#d8d6d0",
+      "rail": "#b9b8b3",
+      "major": "#ffffff",
+      "majorCase": "#d5d4cf",
+      "minor": "#ffffff",
+      "minorCase": "#e1e0db",
+      "path": "#c2c1bb",
+      "service": "#fbfbf9",
+      "label": "#3c3c43",
+      "halo": "#ffffff",
+      "blur": 0
+    },
+    "night": {
+      "bg": "#1c1c1e",
+      "water": "#1b2b40",
+      "green": "#1e2f22",
+      "wood": "#1b2a1f",
+      "landuse": "#222224",
+      "bldg": "#2a2a2d",
+      "bldgLine": "#333337",
+      "rail": "#48484c",
+      "major": "#5a5a60",
+      "majorCase": "#1c1c1e",
+      "minor": "#3d3d42",
+      "minorCase": "#1c1c1e",
+      "path": "#3a3a3f",
+      "service": "#38383d",
+      "label": "#d1d1d6",
+      "halo": "#1c1c1e",
+      "blur": 0.6
+    }
+  },
+  "layers": [
+    {
+      "id": "bg",
+      "type": "background",
+      "paint": {
+        "background-color": "@bg"
+      }
+    },
+    {
+      "id": "landuse",
+      "type": "fill",
+      "source": "base",
+      "source-layer": "landuse",
+      "filter": [
+        "in",
+        ["get", "class"],
+        ["literal", ["industrial", "cemetery", "military", "railway", "hospital", "school", "university", "college"]]
+      ],
+      "paint": {
+        "fill-color": "@landuse"
+      }
+    },
+    {
+      "id": "landcover",
+      "type": "fill",
+      "source": "base",
+      "source-layer": "landcover",
+      "filter": ["in", ["get", "class"], ["literal", ["wood", "grass", "farmland"]]],
+      "paint": {
+        "fill-color": ["match", ["get", "class"], "wood", "@wood", "@green"]
+      }
+    },
+    {
+      "id": "park",
+      "type": "fill",
+      "source": "base",
+      "source-layer": "park",
+      "paint": {
+        "fill-color": "@green",
+        "fill-opacity": 0.8
+      }
+    },
+    {
+      "id": "water",
+      "type": "fill",
+      "source": "base",
+      "source-layer": "water",
+      "paint": {
+        "fill-color": "@water"
+      }
+    },
+    {
+      "id": "waterway",
+      "type": "line",
+      "source": "base",
+      "source-layer": "waterway",
+      "paint": {
+        "line-color": "@water",
+        "line-width": 1.2
+      }
+    },
+    {
+      "id": "bldg",
+      "type": "fill",
+      "source": "base",
+      "source-layer": "building",
+      "minzoom": 13,
+      "paint": {
+        "fill-color": "@bldg",
+        "fill-outline-color": "@bldgLine"
+      }
+    },
+    {
+      "id": "rail",
+      "type": "line",
+      "source": "base",
+      "source-layer": "transportation",
+      "filter": ["in", ["get", "class"], ["literal", ["rail", "transit"]]],
+      "paint": {
+        "line-color": "@rail",
+        "line-width": 1.2,
+        "line-dasharray": [3, 2]
+      }
+    },
+    {
+      "id": "path",
+      "type": "line",
+      "source": "base",
+      "source-layer": "transportation",
+      "minzoom": 14,
+      "filter": ["in", ["get", "class"], ["literal", ["path", "track"]]],
+      "paint": {
+        "line-color": "@path",
+        "line-width": 1,
+        "line-dasharray": [2, 1.5]
+      }
+    },
+    {
+      "id": "minor-case",
+      "type": "line",
+      "source": "base",
+      "source-layer": "transportation",
+      "minzoom": 12.5,
+      "filter": ["in", ["get", "class"], ["literal", ["minor", "service"]]],
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "@minorCase",
+        "line-width": "@width:0.5,3,14"
+      }
+    },
+    {
+      "id": "minor",
+      "type": "line",
+      "source": "base",
+      "source-layer": "transportation",
+      "minzoom": 12.5,
+      "filter": ["in", ["get", "class"], ["literal", ["minor", "service"]]],
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": ["match", ["get", "class"], "service", "@service", "@minor"],
+        "line-width": "@width:0.3,2,11"
+      }
+    },
+    {
+      "id": "major-case",
+      "type": "line",
+      "source": "base",
+      "source-layer": "transportation",
+      "filter": ["in", ["get", "class"], "@majorRoads"],
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "@majorCase",
+        "line-width": "@width:1.2,5,18"
+      }
+    },
+    {
+      "id": "major",
+      "type": "line",
+      "source": "base",
+      "source-layer": "transportation",
+      "filter": ["in", ["get", "class"], "@majorRoads"],
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "@major",
+        "line-width": "@width:0.7,3.5,14",
+        "line-blur": "@blur"
+      }
+    },
+    {
+      "id": "road-label",
+      "type": "symbol",
+      "source": "base",
+      "source-layer": "transportation_name",
+      "minzoom": 14,
+      "layout": {
+        "symbol-placement": "line",
+        "text-field": "@name",
+        "text-font": ["noto"],
+        "text-size": 11.5,
+        "text-max-angle": 30
+      },
+      "paint": {
+        "text-color": "@label",
+        "text-halo-color": "@halo",
+        "text-halo-width": 1.6
+      }
+    },
+    {
+      "id": "place-label",
+      "type": "symbol",
+      "source": "base",
+      "source-layer": "place",
+      "filter": [
+        "in",
+        ["get", "class"],
+        ["literal", ["city", "town", "suburb", "quarter", "neighbourhood", "village"]]
+      ],
+      "layout": {
+        "text-field": "@name",
+        "text-font": ["noto"],
+        "text-size": ["match", ["get", "class"], "city", 16, "suburb", 13, "town", 13, 11.5],
+        "text-max-width": 8,
+        "text-padding": 6
+      },
+      "paint": {
+        "text-color": "@label",
+        "text-halo-color": "@halo",
+        "text-halo-width": 1.8
+      }
+    }
+  ]
+}

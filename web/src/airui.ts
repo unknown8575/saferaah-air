@@ -3,7 +3,7 @@
 // show as arguments and report taps through callbacks, so main.ts keeps only the flow.
 import { h, fmtDist } from './dom.ts';
 import { icon } from './icons.ts';
-import { AQI_BANDS, type AirNow, type SmogLevel } from '../../shared/air.ts';
+import { AQI_BANDS, type AirNow, type SmogLevel, type Weather, type WeatherHour } from '../../shared/air.ts';
 import type { DayPlan } from '../../shared/saans/plan.ts';
 import { TIER_INFO, type Tier } from '../../shared/router.ts';
 import type { WorkerRoute } from './worker.ts';
@@ -154,6 +154,110 @@ const SMOG_TEXT: Record<SmogLevel, string> = {
   severe: 'Smog is trapped near the ground',
 };
 
+/** The big AQI button: number, band, basis, PM2.5 and nearby sensors. */
+function aqiHero(a: AirNow | null, onAsk: () => void): HTMLElement {
+  const B = a ? AQI_BANDS[a.aqi.band] : null;
+  const basis = a?.aqi.basis === '24h' ? '24-hour AQI (CPCB method)' : 'Hourly AQI estimate';
+  return h(
+    'button',
+    { class: 'air-hero', id: 'aqi-card', on: { click: onAsk } },
+    h('span', { class: 'sr-only' }, 'Air quality index '),
+    h('span', { class: 'aqi-ring big' }, a ? String(a.aqi.value) : '–'),
+    h(
+      'span',
+      { class: 'aqi-txt' },
+      h('b', null, a && B ? `${B.label} air` : 'Checking the air…'),
+      h(
+        'small',
+        null,
+        a
+          ? `${basis} · PM2.5 now ${Math.round(a.pm25)} µg/m³ · ${(a.pm25 / 15).toFixed(0)}× WHO`
+          : 'Live data for your area',
+      ),
+      a?.ground ? h('small', null, `Nearby sensors: ${a.ground.pm25} µg/m³ (${a.ground.sensors})`) : null,
+    ),
+    h('span', { class: 'aqi-ask' }, icon('sparkle', 15), 'Ask Saans'),
+  );
+}
+
+const fmt = (v: number | null, f: (x: number) => string) => (v === null ? null : f(v));
+
+/** Temperature, wind, humidity, visibility and mixing height, each read out with its name. */
+function conditions(n: WeatherHour): HTMLElement {
+  const cond = (ic: string, label: string, value: string | null) =>
+    value === null ? null : h('li', null, icon(ic, 15), h('span', { class: 'sr-only' }, `${label}: `), value);
+  return h(
+    'ul',
+    { class: 'conditions', 'aria-label': 'Weather that decides smog' },
+    cond(
+      'thermo',
+      'Temperature',
+      fmt(n.tempC, (x) => `${Math.round(x)} °C`),
+    ),
+    cond(
+      'wind',
+      'Wind',
+      fmt(n.windMs, (x) => `${x.toFixed(1)} m/s`),
+    ),
+    cond(
+      'drop',
+      'Humidity',
+      fmt(n.humidity, (x) => `${Math.round(x)}%`),
+    ),
+    cond(
+      'seen',
+      'Visibility',
+      fmt(n.visibilityM, (x) => `${(x / 1000).toFixed(1)} km`),
+    ),
+    cond(
+      'layers',
+      'Mixing height',
+      fmt(n.blhM, (x) => `${Math.round(x / 10) * 10} m mixing`),
+    ),
+  );
+}
+
+/** Is smog trapped now, coming later, or is the air mixing? Announced to screen readers. */
+function smogBanner(wx: Weather, plan: DayPlan): HTMLElement {
+  const trapNow = wx.smog.level === 'high' || wx.smog.level === 'severe';
+  const when = plan.items.find((i) => i.id === 'trap')?.when ?? 'later';
+  const advice = trapNow
+    ? 'Windows shut, purifier on, no outdoor exercise until it lifts.'
+    : wx.nextTrap
+      ? `Smog trap expected ${when}: air the house before then.`
+      : 'Good time to air the house if the AQI allows.';
+  return h(
+    'div',
+    { class: `smog smog-${wx.smog.level}`, role: 'status' },
+    icon(trapNow ? 'alert' : 'wind', 16),
+    h('span', null, h('b', null, `${SMOG_TEXT[wx.smog.level]}${wx.smog.inversion ? ' (inversion)' : ''}. `), advice),
+  );
+}
+
+function bestTime(plan: DayPlan): HTMLElement | null {
+  if (!plan.best) return null;
+  const impact = plan.items.find((i) => i.id === 'window')?.impact;
+  return h(
+    'p',
+    { class: 'best-time' },
+    icon('sun', 15),
+    h('span', null, 'Cleanest time to go out: ', h('b', null, plan.best.label), impact ? ` · ${impact}` : ''),
+  );
+}
+
+function topSteps(plan: DayPlan): HTMLElement {
+  return h(
+    'ol',
+    { class: 'home-plan', 'aria-label': 'Top steps for today' },
+    plan.items
+      .filter((i) => i.id !== 'window')
+      .slice(0, 3)
+      .map((it) =>
+        h('li', null, icon(it.icon, 15), h('span', null, it.when ? h('b', null, `${it.when} · `) : null, it.title)),
+      ),
+  );
+}
+
 /**
  * The first screen: today's air, the weather that traps smog, when to go out and the top
  * steps of the family plan. Search, the N95 / purifier / park chips, routes and safety sit around it.
@@ -166,91 +270,17 @@ export function airHome(o: {
   onAsk: () => void;
   onPlanTrip: () => void;
 }): HTMLElement {
-  const a = o.air;
-  const B = a ? AQI_BANDS[a.aqi.band] : null;
-  const wx = a?.weather ?? null;
-  const n = wx?.now;
-  const cond = (ic: string, label: string, value: string | null) =>
-    value === null ? null : h('li', null, icon(ic, 15), h('span', { class: 'sr-only' }, `${label}: `), value);
-  const trapNow = wx && (wx.smog.level === 'high' || wx.smog.level === 'severe');
+  const B = o.air ? AQI_BANDS[o.air.aqi.band] : null;
+  const wx = o.air?.weather ?? null;
   return h(
     'section',
     { class: 'air-home', 'aria-labelledby': 'air-title', style: B ? { '--band': B.color } : {} },
     h('h1', { id: 'air-title', class: 'air-title' }, 'Air near you', h('small', null, ` · Delhi · ${o.clock}`)),
-    h(
-      'button',
-      { class: 'air-hero', id: 'aqi-card', on: { click: o.onAsk } },
-      h('span', { class: 'sr-only' }, 'Air quality index '),
-      h('span', { class: 'aqi-ring big' }, a ? String(a.aqi.value) : '–'),
-      h(
-        'span',
-        { class: 'aqi-txt' },
-        h('b', null, a && B ? `${B.label} air` : 'Checking the air…'),
-        h(
-          'small',
-          null,
-          a
-            ? `${a.aqi.basis === '24h' ? '24-hour AQI (CPCB method)' : 'Hourly AQI estimate'} · PM2.5 now ${Math.round(a.pm25)} µg/m³ · ${(a.pm25 / 15).toFixed(0)}× WHO`
-            : 'Live data for your area',
-        ),
-        a?.ground ? h('small', null, `Nearby sensors: ${a.ground.pm25} µg/m³ (${a.ground.sensors})`) : null,
-      ),
-      h('span', { class: 'aqi-ask' }, icon('sparkle', 15), 'Ask Saans'),
-    ),
-    n
-      ? h(
-          'ul',
-          { class: 'conditions', 'aria-label': 'Weather that decides smog' },
-          cond('thermo', 'Temperature', n.tempC !== null ? `${Math.round(n.tempC)} °C` : null),
-          cond('wind', 'Wind', n.windMs !== null ? `${n.windMs.toFixed(1)} m/s` : null),
-          cond('drop', 'Humidity', n.humidity !== null ? `${Math.round(n.humidity)}%` : null),
-          cond('seen', 'Visibility', n.visibilityM !== null ? `${(n.visibilityM / 1000).toFixed(1)} km` : null),
-          cond('layers', 'Mixing height', n.blhM !== null ? `${Math.round(n.blhM / 10) * 10} m mixing` : null),
-        )
-      : null,
-    wx
-      ? h(
-          'div',
-          { class: `smog smog-${wx.smog.level}`, role: 'status' },
-          icon(trapNow ? 'alert' : 'wind', 16),
-          h(
-            'span',
-            null,
-            h('b', null, `${SMOG_TEXT[wx.smog.level]}${wx.smog.inversion ? ' (inversion)' : ''}. `),
-            trapNow
-              ? 'Windows shut, purifier on, no outdoor exercise until it lifts.'
-              : wx.nextTrap
-                ? `Smog trap expected ${o.plan.items.find((i) => i.id === 'trap')?.when ?? 'later'}: air the house before then.`
-                : 'Good time to air the house if the AQI allows.',
-          ),
-        )
-      : null,
-    o.plan.best
-      ? h(
-          'p',
-          { class: 'best-time' },
-          icon('sun', 15),
-          h(
-            'span',
-            null,
-            'Cleanest time to go out: ',
-            h('b', null, o.plan.best.label),
-            o.plan.items.find((i) => i.id === 'window')?.impact
-              ? ` · ${o.plan.items.find((i) => i.id === 'window')!.impact}`
-              : '',
-          ),
-        )
-      : null,
-    h(
-      'ol',
-      { class: 'home-plan', 'aria-label': 'Top steps for today' },
-      o.plan.items
-        .filter((i) => i.id !== 'window')
-        .slice(0, 3)
-        .map((it) =>
-          h('li', null, icon(it.icon, 15), h('span', null, it.when ? h('b', null, `${it.when} · `) : null, it.title)),
-        ),
-    ),
+    aqiHero(o.air, o.onAsk),
+    wx ? conditions(wx.now) : null,
+    wx ? smogBanner(wx, o.plan) : null,
+    bestTime(o.plan),
+    topSteps(o.plan),
     h(
       'div',
       { class: 'home-actions' },

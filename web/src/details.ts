@@ -38,162 +38,187 @@ export function havenLine(r: WorkerRoute): string {
 }
 
 // ---------- details ----------
+type Route = WorkerRoute;
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+function detailsHeader(r: Route): HTMLElement {
+  const back = () => {
+    setView('directions');
+    hooks.renderRoutes();
+  };
+  const arrive = clockText(new Date(now().getTime() + r.timeS * 1000));
+  return h(
+    'div',
+    { class: 'summary' },
+    h('button', { class: 'back', 'aria-label': 'Back to routes', on: { click: back } }, icon('back', 24)),
+    h(
+      'div',
+      { class: 'summary-text' },
+      h('div', { class: 'big-time' }, fmtDuration(r.timeS), ' ', tierBadge(r)),
+      h(
+        'div',
+        { class: 'meta' },
+        `${fmtDist(r.lengthM)} by ${MODE_INFO[S.settings.mode].label.toLowerCase()}, arrive about ${arrive}`,
+      ),
+    ),
+  );
+}
+
+function precautionsBox(r: Route): HTMLElement {
+  const items = r.precautions.items;
+  return h(
+    'div',
+    { class: `prec-box prec-${r.tier}` },
+    h('h3', null, r.tier === 'green' ? 'Precautions' : 'Precautions for this route'),
+    h('p', { class: 'prec-head' }, r.precautions.headline),
+    items.length
+      ? h(
+          'ul',
+          { class: 'prec-list' },
+          items.map((t) => h('li', null, t)),
+        )
+      : null,
+  );
+}
+
+/** The numbers behind the route's colour. */
+function whyColour(r: Route): HTMLElement[] {
+  const dark = darkness(now()) >= 0.5;
+  return [
+    h('h3', null, 'Why this colour'),
+    h(
+      'ul',
+      { class: 'facts' },
+      h('li', null, h('b', null, pct(r.mainRoadShare)), ' on main roads'),
+      dark ? h('li', null, h('b', null, pct(r.litShare)), ' on roads that are usually lit') : null,
+      h('li', null, h('b', null, pct(r.policeShare)), ' within 500 m of a police station'),
+      h('li', null, h('b', null, String(r.havenIds.length)), ` places open along the way at ${clockText(now())}`),
+      h('li', null, havenLine(r)),
+    ),
+  ];
+}
+
+function riskyStretches(r: Route): HTMLElement[] {
+  if (!r.dangerSpots.length) return [];
+  return [
+    h('h3', null, 'Risky stretches'),
+    h(
+      'ul',
+      { class: 'spots' },
+      r.dangerSpots.map((d) =>
+        h(
+          'li',
+          null,
+          h(
+            'button',
+            { class: 'linkish', on: { click: () => smap.map.flyTo({ center: [d.lon, d.lat], zoom: 16.5 }) } },
+            h('span', { class: 'warn-ic' }, '!'),
+            `${fmtDist(d.lengthM)}${d.street ? ' on ' + d.street : ''}: ${d.reasons.join(', ') || 'quiet at this hour'}`,
+          ),
+        ),
+      ),
+    ),
+  ];
+}
+
+function safePlaces(r: Route): HTMLElement[] {
+  if (!r.havenList.length) return [];
+  return [
+    h('h3', null, 'Safe places open on the way'),
+    h(
+      'ul',
+      { class: 'havens' },
+      r.havenList
+        .slice(0, 8)
+        .map((p) =>
+          h(
+            'li',
+            null,
+            h('span', { class: `pi cat-${p.cat}` }, icon(placeIcon(p.cat), 16)),
+            h('span', null, p.name || CAT_INFO[p.cat].label),
+            h('small', null, p.verified ? 'open now' : 'open now (estimated hours)'),
+          ),
+        ),
+    ),
+  ];
+}
+
+/** Who gets the arrival message (tap a name to switch it on or off). */
+function arrivalContacts(): HTMLElement[] {
+  const contacts = S.settings.contacts;
+  const toggle = (c: (typeof contacts)[number]) => () => {
+    c.notify = !c.notify;
+    S.settings = save({ contacts });
+    showDetails();
+  };
+  return [
+    h('h3', null, 'Tell when I reach'),
+    h(
+      'p',
+      { class: 'fine lockline' },
+      icon('lock', 14),
+      'Your location stays on your phone. During the trip it is shared only for your live link and deleted when you arrive.',
+    ),
+    contacts.length
+      ? h(
+          'div',
+          { class: 'chips' },
+          contacts.map((c) =>
+            h(
+              'button',
+              {
+                class: `chip${c.notify ? ' on' : ''}`,
+                'aria-pressed': c.notify ? 'true' : 'false',
+                on: { click: toggle(c) },
+              },
+              c.notify ? icon('check', 15, 2.4) : null,
+              c.name,
+            ),
+          ),
+          h('button', { class: 'chip', on: { click: () => showContacts() } }, '+ Add'),
+        )
+      : h(
+          'p',
+          null,
+          h('button', { class: 'linkish', on: { click: () => showContacts() } }, 'Add a trusted contact'),
+          ' to send an arrival message.',
+        ),
+  ];
+}
+
+function turnList(r: Route): HTMLElement {
+  return h(
+    'details',
+    { class: 'steps' },
+    h('summary', null, 'Turn-by-turn directions'),
+    h(
+      'ol',
+      null,
+      r.steps.map((s) => h('li', null, s.text, s.distM ? h('small', null, ` ${fmtDist(s.distM)}`) : null)),
+    ),
+  );
+}
+
 export function showDetails() {
   if (!S.reply?.routes.length) return;
   setView('details');
   const r = S.reply.routes[S.selected];
   smap.showRoutes(S.reply.routes, S.selected, { callouts: true, onSelect: (i) => hooks.selectRoute(i, true) });
-  const contacts = S.settings.contacts;
-  const pct = (x: number) => `${Math.round(x * 100)}%`;
-  const dark = darkness(now()) >= 0.5;
+  const askAir = () => hooks.askSaans('How clean is the air on this route, and how can I breathe less on the way?');
   clear(
     sheet,
     h('div', { class: 'grip' }),
-    h(
-      'div',
-      { class: 'summary' },
-      h(
-        'button',
-        {
-          class: 'back',
-          'aria-label': 'Back to routes',
-          on: {
-            click: () => {
-              setView('directions');
-              hooks.renderRoutes();
-            },
-          },
-        },
-        icon('back', 24),
-      ),
-      h(
-        'div',
-        { class: 'summary-text' },
-        h('div', { class: 'big-time' }, fmtDuration(r.timeS), ' ', tierBadge(r)),
-        h(
-          'div',
-          { class: 'meta' },
-          `${fmtDist(r.lengthM)} by ${MODE_INFO[S.settings.mode].label.toLowerCase()}, arrive about ${clockText(new Date(now().getTime() + r.timeS * 1000))}`,
-        ),
-      ),
-    ),
+    detailsHeader(r),
     h(
       'div',
       { class: 'pad' },
-      h(
-        'div',
-        { class: `prec-box prec-${r.tier}` },
-        h('h3', null, r.tier === 'green' ? 'Precautions' : 'Precautions for this route'),
-        h('p', { class: 'prec-head' }, r.precautions.headline),
-        r.precautions.items.length
-          ? h(
-              'ul',
-              { class: 'prec-list' },
-              r.precautions.items.map((t) => h('li', null, t)),
-            )
-          : null,
-      ),
-      h('h3', null, 'Why this colour'),
-      h(
-        'ul',
-        { class: 'facts' },
-        h('li', null, h('b', null, pct(r.mainRoadShare)), ' on main roads'),
-        dark ? h('li', null, h('b', null, pct(r.litShare)), ' on roads that are usually lit') : null,
-        h('li', null, h('b', null, pct(r.policeShare)), ' within 500 m of a police station'),
-        h('li', null, h('b', null, String(r.havenIds.length)), ` places open along the way at ${clockText(now())}`),
-        h('li', null, havenLine(r)),
-      ),
-      airSection(r, S.reply.routes, S.air?.pm25 ?? null, clockText(now()), () =>
-        hooks.askSaans('How clean is the air on this route, and how can I breathe less on the way?'),
-      ),
-      r.dangerSpots.length
-        ? [
-            h('h3', null, 'Risky stretches'),
-            h(
-              'ul',
-              { class: 'spots' },
-              r.dangerSpots.map((d) =>
-                h(
-                  'li',
-                  null,
-                  h(
-                    'button',
-                    { class: 'linkish', on: { click: () => smap.map.flyTo({ center: [d.lon, d.lat], zoom: 16.5 }) } },
-                    h('span', { class: 'warn-ic' }, '!'),
-                    `${fmtDist(d.lengthM)}${d.street ? ' on ' + d.street : ''}: ${d.reasons.join(', ') || 'quiet at this hour'}`,
-                  ),
-                ),
-              ),
-            ),
-          ]
-        : null,
-      r.havenList.length
-        ? [
-            h('h3', null, 'Safe places open on the way'),
-            h(
-              'ul',
-              { class: 'havens' },
-              r.havenList
-                .slice(0, 8)
-                .map((p) =>
-                  h(
-                    'li',
-                    null,
-                    h('span', { class: `pi cat-${p.cat}` }, icon(placeIcon(p.cat), 16)),
-                    h('span', null, p.name || CAT_INFO[p.cat].label),
-                    h('small', null, p.verified ? 'open now' : 'open now (estimated hours)'),
-                  ),
-                ),
-            ),
-          ]
-        : null,
-      h('h3', null, 'Tell when I reach'),
-      h(
-        'p',
-        { class: 'fine lockline' },
-        icon('lock', 14),
-        'Your location stays on your phone. During the trip it is shared only for your live link and deleted when you arrive.',
-      ),
-      contacts.length
-        ? h(
-            'div',
-            { class: 'chips' },
-            contacts.map((c) =>
-              h(
-                'button',
-                {
-                  class: `chip${c.notify ? ' on' : ''}`,
-                  'aria-pressed': c.notify ? 'true' : 'false',
-                  on: {
-                    click: () => {
-                      c.notify = !c.notify;
-                      S.settings = save({ contacts });
-                      showDetails();
-                    },
-                  },
-                },
-                c.notify ? icon('check', 15, 2.4) : null,
-                c.name,
-              ),
-            ),
-            h('button', { class: 'chip', on: { click: () => showContacts() } }, '+ Add'),
-          )
-        : h(
-            'p',
-            null,
-            h('button', { class: 'linkish', on: { click: () => showContacts() } }, 'Add a trusted contact'),
-            ' to send an arrival message.',
-          ),
-      h(
-        'details',
-        { class: 'steps' },
-        h('summary', null, 'Turn-by-turn directions'),
-        h(
-          'ol',
-          null,
-          r.steps.map((s) => h('li', null, s.text, s.distM ? h('small', null, ` ${fmtDist(s.distM)}`) : null)),
-        ),
-      ),
+      precautionsBox(r),
+      ...whyColour(r),
+      airSection(r, S.reply.routes, S.air?.pm25 ?? null, clockText(now()), askAir),
+      ...riskyStretches(r),
+      ...safePlaces(r),
+      ...arrivalContacts(),
+      turnList(r),
       h(
         'p',
         { class: 'fine' },

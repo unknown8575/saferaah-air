@@ -1,361 +1,33 @@
-// MapLibre map on our own basemap: OpenMapTiles-schema vector tiles for Delhi, packed into
-// one file per zoom-11 area and fetched only when that part of the city comes into view.
+// MapLibre map: the base map (basemap.ts) with the app's overlays (street colours, places,
+// routes, markers) on top.
 import * as maplibregl from 'maplibre-gl';
-import type { Map as MLMap, StyleSpecification, GeoJSONSource } from 'maplibre-gl';
+import type { Map as MLMap, GeoJSONSource } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 // MapLibre 6 loads its tile worker from a separate self-contained module
 import mlWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
-import { TIER_INFO, type Tier } from '../../shared/router.ts';
 import { CAT_INFO, type Poi, type PoiCat } from '../../shared/places.ts';
 import type { LonLat } from '../../shared/geo.ts';
 import type { WorkerRoute } from './worker.ts';
 import { icon } from './icons.ts';
+import {
+  AIR_COLOR,
+  RISK_COLOR,
+  TRAFFIC_KEY,
+  baseStyle,
+  calloutEl,
+  calloutPoint,
+  dangerPinEl,
+  dangerPopupHtml,
+  routeLines,
+  circlePolygon,
+  pinEl,
+  type FeatureCollection,
+  type Theme,
+} from './basemap.ts';
+
+export { loadBasemap, hasTraffic, escapeHtml, type Theme } from './basemap.ts';
 
 maplibregl.setWorkerUrl(mlWorkerUrl);
-
-interface Pack {
-  tiles: Record<string, [number, number]>;
-  data: Uint8Array;
-}
-const packs = new Map<string, Promise<Pack | null>>();
-let packZoom = 11;
-let available = new Set<string>();
-
-function loadPack(base: string, key: string): Promise<Pack | null> {
-  let p = packs.get(key);
-  if (!p) {
-    p = (async () => {
-      if (!available.has(key)) return null;
-      const r = await fetch(`${base}data/tiles/${key}.bin`);
-      if (!r.ok) throw new Error(`map pack ${key}: ${r.status}`);
-      const buf = new Uint8Array(await r.arrayBuffer());
-      if (String.fromCharCode(...buf.subarray(0, 4)) !== 'SRT1') throw new Error('Bad map pack');
-      const hlen = new DataView(buf.buffer, buf.byteOffset).getUint32(4, true);
-      const head = JSON.parse(new TextDecoder().decode(buf.subarray(8, 8 + hlen)));
-      return { tiles: head.tiles, data: buf.subarray(8 + hlen) };
-    })();
-    p.catch(() => packs.delete(key)); // let a failed download retry later
-    packs.set(key, p);
-  }
-  return p;
-}
-
-export async function loadBasemap(base: string): Promise<{ bounds: [number, number, number, number] }> {
-  const index = await (await fetch(base + 'data/tiles/index.json')).json();
-  packZoom = index.packZoom ?? 11;
-  available = new Set(index.packs);
-  loadPack(base, 'low'); // small; covers the whole-city view
-  maplibregl.addProtocol('srt', async (params: { url: string }) => {
-    const [z, x, y] = params.url.replace('srt://', '').split('/').map(Number);
-    const key = z < packZoom ? 'low' : `${packZoom}_${x >> (z - packZoom)}_${y >> (z - packZoom)}`;
-    const pack = await loadPack(base, key);
-    const e = pack?.tiles[`${z}/${x}/${y}`];
-    if (!pack || !e) return { data: new ArrayBuffer(0) };
-    return { data: pack.data.slice(e[0], e[0] + e[1]).buffer };
-  });
-  return { bounds: index.bounds };
-}
-
-type FeatureCollection = { type: 'FeatureCollection'; features: unknown[] };
-export type Theme = 'day' | 'night';
-const PAL = {
-  // calm, Apple-Maps-like base so the safety colours are the only strong colour on screen
-  day: {
-    bg: '#f2f2ef',
-    water: '#a9d1f2',
-    green: '#cfe7c4',
-    wood: '#c4e0b8',
-    landuse: '#ecebe6',
-    bldg: '#e5e4df',
-    bldgLine: '#d8d6d0',
-    rail: '#b9b8b3',
-    major: '#ffffff',
-    majorCase: '#d5d4cf',
-    minor: '#ffffff',
-    minorCase: '#e1e0db',
-    path: '#c2c1bb',
-    service: '#fbfbf9',
-    label: '#3c3c43',
-    halo: '#ffffff',
-  },
-  night: {
-    bg: '#1c1c1e',
-    water: '#1b2b40',
-    green: '#1e2f22',
-    wood: '#1b2a1f',
-    landuse: '#222224',
-    bldg: '#2a2a2d',
-    bldgLine: '#333337',
-    rail: '#48484c',
-    major: '#5a5a60',
-    majorCase: '#1c1c1e',
-    minor: '#3d3d42',
-    minorCase: '#1c1c1e',
-    path: '#3a3a3f',
-    service: '#38383d',
-    label: '#d1d1d6',
-    halo: '#1c1c1e',
-  },
-};
-const NAME = ['coalesce', ['get', 'name:latin'], ['get', 'name_en'], ['get', 'name']];
-const MAJOR = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'];
-
-export function baseStyle(theme: Theme, base: string, bounds: [number, number, number, number]): StyleSpecification {
-  const p = PAL[theme];
-  const glyphBase = new URL('fonts/', new URL(base, location.href)).href;
-  const width = (a: number, b: number, c: number) => [
-    'interpolate',
-    ['exponential', 1.6],
-    ['zoom'],
-    10,
-    a,
-    14,
-    b,
-    18,
-    c,
-  ];
-  return {
-    version: 8,
-    glyphs: glyphBase + '{fontstack}/{range}.pbf', // one bundled font stack, named "noto" (Noto Sans Regular)
-    sources: {
-      base: {
-        type: 'vector',
-        tiles: ['srt://{z}/{x}/{y}'],
-        minzoom: 0,
-        maxzoom: 14,
-        bounds,
-        attribution:
-          '© <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
-      },
-    },
-    layers: [
-      { id: 'bg', type: 'background', paint: { 'background-color': p.bg } },
-      {
-        id: 'landuse',
-        type: 'fill',
-        source: 'base',
-        'source-layer': 'landuse',
-        filter: [
-          'in',
-          ['get', 'class'],
-          ['literal', ['industrial', 'cemetery', 'military', 'railway', 'hospital', 'school', 'university', 'college']],
-        ],
-        paint: { 'fill-color': p.landuse },
-      },
-      {
-        id: 'landcover',
-        type: 'fill',
-        source: 'base',
-        'source-layer': 'landcover',
-        filter: ['in', ['get', 'class'], ['literal', ['wood', 'grass', 'farmland']]],
-        paint: { 'fill-color': ['match', ['get', 'class'], 'wood', p.wood, p.green] },
-      },
-      {
-        id: 'park',
-        type: 'fill',
-        source: 'base',
-        'source-layer': 'park',
-        paint: { 'fill-color': p.green, 'fill-opacity': 0.8 },
-      },
-      { id: 'water', type: 'fill', source: 'base', 'source-layer': 'water', paint: { 'fill-color': p.water } },
-      {
-        id: 'waterway',
-        type: 'line',
-        source: 'base',
-        'source-layer': 'waterway',
-        paint: { 'line-color': p.water, 'line-width': 1.2 },
-      },
-      {
-        id: 'bldg',
-        type: 'fill',
-        source: 'base',
-        'source-layer': 'building',
-        minzoom: 13,
-        paint: { 'fill-color': p.bldg, 'fill-outline-color': p.bldgLine },
-      },
-      {
-        id: 'rail',
-        type: 'line',
-        source: 'base',
-        'source-layer': 'transportation',
-        filter: ['in', ['get', 'class'], ['literal', ['rail', 'transit']]],
-        paint: { 'line-color': p.rail, 'line-width': 1.2, 'line-dasharray': [3, 2] },
-      },
-      {
-        id: 'path',
-        type: 'line',
-        source: 'base',
-        'source-layer': 'transportation',
-        minzoom: 14,
-        filter: ['in', ['get', 'class'], ['literal', ['path', 'track']]],
-        paint: { 'line-color': p.path, 'line-width': 1, 'line-dasharray': [2, 1.5] },
-      },
-      {
-        id: 'minor-case',
-        type: 'line',
-        source: 'base',
-        'source-layer': 'transportation',
-        minzoom: 12.5,
-        filter: ['in', ['get', 'class'], ['literal', ['minor', 'service']]],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': p.minorCase, 'line-width': width(0.5, 3, 14) },
-      },
-      {
-        id: 'minor',
-        type: 'line',
-        source: 'base',
-        'source-layer': 'transportation',
-        minzoom: 12.5,
-        filter: ['in', ['get', 'class'], ['literal', ['minor', 'service']]],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': ['match', ['get', 'class'], 'service', p.service, p.minor],
-          'line-width': width(0.3, 2, 11),
-        },
-      },
-      {
-        id: 'major-case',
-        type: 'line',
-        source: 'base',
-        'source-layer': 'transportation',
-        filter: ['in', ['get', 'class'], ['literal', MAJOR]],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': p.majorCase, 'line-width': width(1.2, 5, 18) },
-      },
-      {
-        id: 'major',
-        type: 'line',
-        source: 'base',
-        'source-layer': 'transportation',
-        filter: ['in', ['get', 'class'], ['literal', MAJOR]],
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': p.major,
-          'line-width': width(0.7, 3.5, 14),
-          ...(theme === 'night' ? { 'line-blur': 0.6 } : {}),
-        },
-      },
-      {
-        id: 'road-label',
-        type: 'symbol',
-        source: 'base',
-        'source-layer': 'transportation_name',
-        minzoom: 14,
-        layout: {
-          'symbol-placement': 'line',
-          'text-field': NAME,
-          'text-font': ['noto'],
-          'text-size': 11.5,
-          'text-max-angle': 30,
-        },
-        paint: { 'text-color': p.label, 'text-halo-color': p.halo, 'text-halo-width': 1.6 },
-      },
-      {
-        id: 'place-label',
-        type: 'symbol',
-        source: 'base',
-        'source-layer': 'place',
-        filter: [
-          'in',
-          ['get', 'class'],
-          ['literal', ['city', 'town', 'suburb', 'quarter', 'neighbourhood', 'village']],
-        ],
-        layout: {
-          'text-field': NAME,
-          'text-font': ['noto'],
-          'text-size': ['match', ['get', 'class'], 'city', 16, 'suburb', 13, 'town', 13, 11.5],
-          'text-max-width': 8,
-          'text-padding': 6,
-        },
-        paint: { 'text-color': p.label, 'text-halo-color': p.halo, 'text-halo-width': 1.8 },
-      },
-    ] as never,
-  };
-}
-
-const TRAFFIC_KEY = (import.meta.env.VITE_TOMTOM_KEY as string | undefined) ?? '';
-export const hasTraffic = () => !!TRAFFIC_KEY;
-
-/** Street risk (0..1) to the same four colours the routes use. */
-/** street air factor (1 = city background) → a smog scale from clean teal to deep purple */
-const AIR_COLOR = [
-  'interpolate',
-  ['linear'],
-  ['get', 'f'],
-  0.95,
-  '#2fbf9b',
-  1.12,
-  '#c9c446',
-  1.3,
-  '#ff9f0a',
-  1.5,
-  '#d9480f',
-  1.8,
-  '#7b2cbf',
-];
-const RISK_COLOR = [
-  'step',
-  ['get', 'r'],
-  TIER_INFO.green.color,
-  0.32,
-  TIER_INFO.yellow.color,
-  0.46,
-  TIER_INFO.red.color,
-  0.6,
-  TIER_INFO.darkred.color,
-];
-
-function circlePolygon(lon: number, lat: number, radiusM: number, n = 48): LonLat[] {
-  const out: LonLat[] = [];
-  const dLat = radiusM / 111200,
-    dLon = radiusM / (111200 * Math.cos((lat * Math.PI) / 180));
-  for (let i = 0; i <= n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    out.push([lon + dLon * Math.cos(a), lat + dLat * Math.sin(a)]);
-  }
-  return out;
-}
-
-/** A point on route i that is far from the other routes, so its label doesn't sit on top of theirs. */
-function calloutPoint(routes: { coords: LonLat[] }[], i: number): LonLat {
-  const own = routes[i].coords;
-  const step = Math.max(1, Math.floor(own.length / 60));
-  const others: LonLat[] = [];
-  routes.forEach((r, k) => {
-    if (k !== i)
-      for (let j = 0; j < r.coords.length; j += Math.max(1, Math.floor(r.coords.length / 120)))
-        others.push(r.coords[j]);
-  });
-  let best = own[Math.floor(own.length / 2)],
-    bestD = -1;
-  const lo = Math.floor(own.length * 0.2),
-    hi = Math.ceil(own.length * 0.8);
-  for (let j = lo; j < hi; j += step) {
-    const p = own[j];
-    let d = Infinity;
-    for (const q of others) {
-      const dd = ((p[0] - q[0]) * 97.6) ** 2 + ((p[1] - q[1]) * 111.2) ** 2;
-      if (dd < d) d = dd;
-    }
-    if (d > bestD + 1e-9) {
-      bestD = d;
-      best = p;
-    }
-  }
-  return best;
-}
-
-/** Marker element: MapLibre owns the outer element's transform, so shapes that rotate go inside. */
-function pinEl(cls: string, label: string): HTMLElement {
-  const el = document.createElement('div');
-  el.className = 'pin-wrap';
-  el.setAttribute('role', 'img');
-  el.setAttribute('aria-label', label);
-  const inner = document.createElement('div');
-  inner.className = `pin ${cls}`;
-  el.appendChild(inner);
-  return el;
-}
 
 export class SafeMap {
   map: MLMap;
@@ -402,9 +74,18 @@ export class SafeMap {
     );
   }
 
+  /** Layers drawn over the base map, bottom to top. */
   private addOverlays() {
+    this.addTraffic();
+    this.addStreetColours();
+    this.addAccuracy();
+    this.addPlaces();
+    this.addRouteLines();
+  }
+
+  /** Live traffic tiles (only with a TomTom key). */
+  private addTraffic() {
     const m = this.map;
-    const empty = { type: 'FeatureCollection' as const, features: [] };
     if (TRAFFIC_KEY) {
       m.addSource('traffic', {
         type: 'raster',
@@ -423,6 +104,12 @@ export class SafeMap {
         paint: { 'raster-opacity': 0.85 },
       });
     }
+  }
+
+  /** Every street coloured by estimated air or by safety right now. */
+  private addStreetColours() {
+    const m = this.map;
+    const empty = { type: 'FeatureCollection' as const, features: [] };
     m.addSource('air', { type: 'geojson', data: empty });
     m.addLayer({
       id: 'air',
@@ -450,6 +137,12 @@ export class SafeMap {
         'line-opacity': this.safetyDim ? 0.25 : 0.55,
       },
     });
+  }
+
+  /** The blue circle of GPS accuracy around you. */
+  private addAccuracy() {
+    const m = this.map;
+    const empty = { type: 'FeatureCollection' as const, features: [] };
     m.addSource('acc', { type: 'geojson', data: empty });
     m.addLayer({ id: 'acc', type: 'fill', source: 'acc', paint: { 'fill-color': '#3d5afe', 'fill-opacity': 0.12 } });
     m.addLayer({
@@ -458,6 +151,12 @@ export class SafeMap {
       source: 'acc',
       paint: { 'line-color': '#3d5afe', 'line-opacity': 0.35, 'line-width': 1 },
     });
+  }
+
+  /** Safe places (open ones filled in) and their names when zoomed in. */
+  private addPlaces() {
+    const m = this.map;
+    const empty = { type: 'FeatureCollection' as const, features: [] };
     m.addSource('pois', { type: 'geojson', data: empty });
     m.addLayer({
       id: 'pois',
@@ -521,6 +220,12 @@ export class SafeMap {
         'text-halo-width': 1.5,
       },
     });
+  }
+
+  /** Route lines (the selected one on top, wider) and the live trip track. */
+  private addRouteLines() {
+    const m = this.map;
+    const empty = { type: 'FeatureCollection' as const, features: [] };
     m.addSource('routes', { type: 'geojson', data: empty });
     m.addLayer({
       id: 'routes-casing',
@@ -651,22 +356,7 @@ export class SafeMap {
     selected: number,
     opts: { callouts?: boolean; onSelect?: (i: number) => void } = {},
   ) {
-    const build = (frac: number): FeatureCollection => ({
-      type: 'FeatureCollection',
-      features: routes.map((r, i) => ({
-        type: 'Feature' as const,
-        geometry: {
-          type: 'LineString' as const,
-          coordinates: frac >= 1 ? r.coords : r.coords.slice(0, Math.max(2, Math.ceil(r.coords.length * frac))),
-        },
-        properties: {
-          i,
-          sel: i === selected ? 1 : 0,
-          z: i === selected ? 10 : i,
-          color: TIER_INFO[r.tier as Tier].color,
-        },
-      })),
-    });
+    const build = (frac: number) => routeLines(routes, selected, frac);
     // new routes draw themselves from start to destination; changing the selection does not
     const key = routes.map((r) => `${r.coords.length}:${Math.round(r.timeS)}`).join('|');
     const animate = !!opts.callouts && key !== this.routeKey && !matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -686,20 +376,7 @@ export class SafeMap {
     this.callouts = [];
     if (opts.callouts && routes.length) {
       routes.forEach((r, i) => {
-        const el = document.createElement('button');
-        el.className = `callout tier-${r.tier}${i === selected ? ' sel' : ''}${animate ? ' late' : ''}`;
-        el.dataset.i = String(i);
-        const ci = document.createElement('span');
-        ci.className = 'ci';
-        ci.appendChild(icon(r.tier === 'green' ? 'check' : 'alert', 11, 2.6));
-        const b = document.createElement('b');
-        b.textContent = fmtMin(r.timeS);
-        el.append(ci, b);
-        el.setAttribute('aria-label', `Route ${i + 1}: ${fmtMin(r.timeS)}, ${TIER_INFO[r.tier as Tier].label}`);
-        el.addEventListener('click', (e) => {
-          e.stopPropagation();
-          opts.onSelect?.(i);
-        });
+        const el = calloutEl(r, i, i === selected, animate, () => opts.onSelect?.(i));
         const mk = new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, -6] })
           .setLngLat(calloutPoint(routes, i))
           .addTo(this.map);
@@ -710,15 +387,9 @@ export class SafeMap {
     const r = routes[selected];
     if (r)
       for (const d of r.dangerSpots) {
-        const el = document.createElement('button');
-        el.className = 'danger-pin';
-        el.setAttribute('aria-label', `Risky stretch, ${d.lengthM} metres: ${d.reasons.join(', ')}`);
-        el.textContent = '!';
-        const pop = new maplibregl.Popup({ offset: 14, closeButton: false }).setHTML(
-          `<b>Risky stretch, ${d.lengthM} m${d.street ? ' on ' + escapeHtml(d.street) : ''}</b><br>${d.reasons.map(escapeHtml).join('<br>') || 'quiet at this hour'}`,
-        );
+        const pop = new maplibregl.Popup({ offset: 14, closeButton: false }).setHTML(dangerPopupHtml(d));
         this.markers.push(
-          new maplibregl.Marker({ element: el }).setLngLat([d.lon, d.lat]).setPopup(pop).addTo(this.map),
+          new maplibregl.Marker({ element: dangerPinEl(d) }).setLngLat([d.lon, d.lat]).setPopup(pop).addTo(this.map),
         );
       }
   }
@@ -868,13 +539,4 @@ export class SafeMap {
     for (const c of coords) b.extend(c);
     this.map.fitBounds(b, { padding: pad, maxZoom: 16.5, duration: 600, bearing: 0, pitch: 0 });
   }
-}
-
-const fmtMin = (s: number) => {
-  const m = Math.max(1, Math.round(s / 60));
-  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60 ? (m % 60) + ' m' : ''}`.trim();
-};
-
-export function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }

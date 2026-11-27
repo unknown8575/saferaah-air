@@ -3,6 +3,8 @@
 // (Gemini) when it is reachable, otherwise from the built-in engine on the phone.
 // Conversations are kept in memory only and vanish when the app closes.
 import { h, clear } from './dom.ts';
+import { familyForm } from './family-form.ts';
+import { micButton } from './voice.ts';
 import { icon } from './icons.ts';
 import { load, save } from './store.ts';
 import { api } from './api.ts';
@@ -17,7 +19,7 @@ import {
 import type { Intent as PlaceIntent } from '../../shared/kinds.ts';
 import type { BrowsePlace } from './browse.ts';
 import { fmtDist } from './dom.ts';
-import { dayPlan, TRAVEL_LABEL, hourLabel, type Family, type Travel } from '../../shared/saans/plan.ts';
+import { dayPlan, TRAVEL_LABEL, hourLabel, type Family } from '../../shared/saans/plan.ts';
 
 export interface SaansEnv {
   air: () => Promise<AirNow | null>;
@@ -269,175 +271,16 @@ function familyStrip(env: SaansEnv, body: HTMLElement, msgs: HTMLElement, f: Fam
 }
 
 function editFamily(env: SaansEnv, body: HTMLElement, msgs: HTMLElement) {
-  const f: Family = structuredClone(load().family);
-  const stepper = (key: 'adults' | 'children' | 'elders', label: string, min: number) => {
-    const val = h('output', null, String(f[key]));
-    const set = (d: number) => {
-      f[key] = Math.max(min, Math.min(12, f[key] + d));
-      val.textContent = String(f[key]);
-    };
-    return h(
-      'div',
-      { class: 'fe-row' },
-      h('span', null, label),
-      h(
-        'span',
-        { class: 'stepper' },
-        h(
-          'button',
-          { type: 'button', 'aria-label': `Fewer ${label.toLowerCase()}`, on: { click: () => set(-1) } },
-          '−',
-        ),
-        val,
-        h('button', { type: 'button', 'aria-label': `More ${label.toLowerCase()}`, on: { click: () => set(1) } }, '+'),
-      ),
-    );
-  };
-  const toggle = (key: 'asthma' | 'pregnant', label: string) =>
-    h(
-      'label',
-      { class: 'fe-row switch' },
-      h('span', null, label),
-      h('input', {
-        type: 'checkbox',
-        checked: f[key],
-        on: {
-          change: (e: Event) => {
-            f[key] = (e.target as HTMLInputElement).checked;
-          },
-        },
-      }),
-    );
-  const seg = <T extends string>(opts: [T, string][], cur: T, on: (v: T) => void, name: string) =>
-    h(
-      'div',
-      { class: 'seg', role: 'radiogroup', 'aria-label': name },
-      opts.map(([v, l]) =>
-        h(
-          'button',
-          {
-            type: 'button',
-            role: 'radio',
-            'aria-checked': v === cur ? 'true' : 'false',
-            class: v === cur ? 'on' : '',
-            on: {
-              click: (e: Event) => {
-                on(v);
-                for (const b of (e.currentTarget as HTMLElement).parentElement!.children) {
-                  b.classList.toggle('on', b === e.currentTarget);
-                  b.setAttribute('aria-checked', b === e.currentTarget ? 'true' : 'false');
-                }
-              },
-            },
-          },
-          l,
-        ),
-      ),
-    );
-  const room = h('output', null, `${f.bedroomM2} m²`);
-  const kmOut = h('output', null, `${f.commute?.km ?? 8} km`);
-  let commuteMode: Travel | 'none' = f.commute?.mode ?? 'none';
-  let km = f.commute?.km ?? 8;
+  const back = () => renderBody(env, body, msgs);
   clear(
     body,
-    h(
-      'form',
-      {
-        class: 'family-form',
-        on: {
-          submit: (e: Event) => {
-            e.preventDefault();
-            f.commute = commuteMode === 'none' ? null : { mode: commuteMode, km };
-            save({ family: f, familySet: true });
-            renderBody(env, body, msgs);
-          },
-        },
+    familyForm(
+      load().family,
+      (f) => {
+        save({ family: f, familySet: true });
+        back();
       },
-      h('h3', null, 'Your family'),
-      h('p', { class: 'fe-note' }, 'Kept only on this phone. Saans uses it to tailor the plan.'),
-      stepper('adults', 'Adults', 0),
-      stepper('children', 'Children', 0),
-      stepper('elders', 'Elders (60+)', 0),
-      toggle('asthma', 'Someone has asthma or a lung condition'),
-      toggle('pregnant', 'Someone is pregnant'),
-      h(
-        'div',
-        { class: 'fe-block' },
-        h('span', null, 'Cooking with'),
-        seg(
-          [
-            ['lpg', 'LPG'],
-            ['induction', 'Induction'],
-            ['wood', 'Wood / coal'],
-            ['kerosene', 'Kerosene'],
-          ],
-          f.cooking,
-          (v) => {
-            f.cooking = v;
-          },
-          'Cooking fuel',
-        ),
-      ),
-      h(
-        'div',
-        { class: 'fe-block' },
-        h('span', null, 'Bedroom size ', room),
-        h('input', {
-          type: 'range',
-          min: '6',
-          max: '30',
-          step: '1',
-          value: String(f.bedroomM2),
-          'aria-label': 'Bedroom size in square metres',
-          on: {
-            input: (e: Event) => {
-              f.bedroomM2 = Number((e.target as HTMLInputElement).value);
-              room.textContent = `${f.bedroomM2} m²`;
-            },
-          },
-        }),
-      ),
-      h(
-        'div',
-        { class: 'fe-block' },
-        h('span', null, 'Daily commute'),
-        seg(
-          [
-            ['none', 'None'],
-            ['car', 'Car'],
-            ['twowheeler', '2-wheeler'],
-            ['auto', 'Auto'],
-            ['bus', 'Bus'],
-            ['metro', 'Metro'],
-          ],
-          commuteMode,
-          (v) => {
-            commuteMode = v;
-          },
-          'Commute mode',
-        ),
-        h('span', { class: 'fe-km' }, 'One way ', kmOut),
-        h('input', {
-          type: 'range',
-          min: '1',
-          max: '40',
-          step: '1',
-          value: String(km),
-          'aria-label': 'Commute distance one way in kilometres',
-          on: {
-            input: (e: Event) => {
-              km = Number((e.target as HTMLInputElement).value);
-              kmOut.textContent = `${km} km`;
-            },
-          },
-        }),
-      ),
-      h(
-        'div',
-        { class: 'fe-actions' },
-        h('button', { type: 'button', class: 'btn', on: { click: () => renderBody(env, body, msgs) } }, 'Cancel'),
-        h('button', { type: 'submit', class: 'btn primary', id: 'family-save' }, 'Save'),
-      ),
+      back,
     ),
   );
 }
@@ -550,50 +393,6 @@ function bubble(m: Msg): HTMLElement {
 let busy = false;
 let env0: SaansEnv | null = null;
 
-/** Speak a question instead of typing it (Web Speech API, Indian English; Hinglish works too). */
-function micButton(input: HTMLInputElement, send: (t: string) => void): HTMLElement | null {
-  const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
-  if (!SR) return null;
-  const btn = h(
-    'button',
-    { class: 'saans-mic', type: 'button', 'aria-label': 'Ask by voice', 'aria-pressed': 'false' },
-    icon('mic', 18),
-  );
-  let rec: any = null;
-  btn.addEventListener('click', () => {
-    if (rec) {
-      rec.stop();
-      return;
-    }
-    rec = new SR();
-    rec.lang = 'en-IN';
-    rec.interimResults = true;
-    rec.maxAlternatives = 1;
-    btn.classList.add('on');
-    btn.setAttribute('aria-pressed', 'true');
-    rec.onresult = (e: any) => {
-      const r = e.results[e.results.length - 1];
-      input.value = r[0].transcript;
-      if (r.isFinal) {
-        const t = input.value;
-        input.value = '';
-        send(t);
-      }
-    };
-    rec.onend = rec.onerror = () => {
-      rec = null;
-      btn.classList.remove('on');
-      btn.setAttribute('aria-pressed', 'false');
-    };
-    try {
-      rec.start();
-    } catch {
-      rec = null;
-      btn.classList.remove('on');
-    }
-  });
-  return btn;
-}
 async function ask(env: SaansEnv, raw: string, msgs: HTMLElement) {
   const q = raw.trim().slice(0, 500);
   if (!q || busy) return;

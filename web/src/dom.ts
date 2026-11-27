@@ -1,6 +1,27 @@
 // Tiny DOM helpers (no framework, keeps the bundle small for cheap phones).
 type Child = Node | string | number | null | undefined | false | Child[];
-type Attrs = Record<string, unknown> & { on?: Record<string, (e: any) => void> };
+/**
+ * A listener may name the specific event it expects (MouseEvent, KeyboardEvent...). Declared as a
+ * method so TypeScript checks the parameter bivariantly, as it does for addEventListener.
+ */
+type Listener = { handle(e: Event): void }['handle'];
+type Attrs = Record<string, unknown> & { on?: Record<string, Listener> };
+
+function setStyle(el: HTMLElement, style: Record<string, string>): void {
+  for (const [k, v] of Object.entries(style)) {
+    if (k.startsWith('--')) el.style.setProperty(k, v);
+    else (el.style as unknown as Record<string, string>)[k] = v;
+  }
+}
+
+/** One attribute: `on` adds listeners, `class` and `style` set those, true/false add or skip. */
+function setAttr(el: HTMLElement, k: string, v: unknown): void {
+  if (k === 'on') for (const [ev, fn] of Object.entries(v as Record<string, Listener>)) el.addEventListener(ev, fn);
+  else if (k === 'class') el.className = String(v);
+  else if (k === 'style' && typeof v === 'object') setStyle(el, v as Record<string, string>);
+  else if (v === true) el.setAttribute(k, '');
+  else if (v !== false && v != null) el.setAttribute(k, String(v));
+}
 
 export function h<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -8,19 +29,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   ...kids: Child[]
 ): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
-  if (attrs)
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'on')
-        for (const [ev, fn] of Object.entries(v as Record<string, (e: Event) => void>)) el.addEventListener(ev, fn);
-      else if (k === 'class') el.className = String(v);
-      else if (k === 'style' && typeof v === 'object') {
-        for (const [sk, sv] of Object.entries(v as Record<string, string>)) {
-          if (sk.startsWith('--')) el.style.setProperty(sk, sv);
-          else (el.style as unknown as Record<string, string>)[sk] = sv;
-        }
-      } else if (v === true) el.setAttribute(k, '');
-      else if (v !== false && v != null) el.setAttribute(k, String(v));
-    }
+  if (attrs) for (const [k, v] of Object.entries(attrs)) setAttr(el, k, v);
   append(el, kids);
   return el;
 }

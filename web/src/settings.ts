@@ -4,14 +4,21 @@ import { icon } from './icons.ts';
 import { save, normalisePhone, type Contact } from './store.ts';
 import { telLink, arrivalText, HELPLINES } from './messages.ts';
 import { BASE, S, clockText, closeModal, openModal, setView, sheet, toast, top, type View, hooks } from './app.ts';
-import { renderJourney, renderArrived } from './journey.ts';
+import { renderArrived } from './arrived.ts';
+import { renderJourney } from './journey-view.ts';
 
 // ---------- contacts & settings ----------
-export function showContacts() {
-  const prev = S.view === 'contacts' ? 'home' : S.view;
-  setView('contacts');
-  clear(top);
-  const st = S.settings;
+/** Why a new contact can't be saved, or null when it can. */
+function contactProblem(name: string, phone: string | null, contacts: Contact[]): string | null {
+  if (!name.trim()) return 'Enter a name.';
+  if (!phone) return 'Enter a valid mobile number (10 digits, or with +country code).';
+  if (contacts.length >= 5) return 'You can save up to 5 contacts.';
+  if (contacts.some((c) => c.phone === phone)) return 'This number is already saved.';
+  return null;
+}
+
+/** Name and phone fields with an Add button. `reopen` redraws the screen after a change. */
+function addContactForm(reopen: () => void): HTMLElement[] {
   const name = h('input', { type: 'text', placeholder: 'Name, e.g. Maa', 'aria-label': 'Contact name', maxlength: 30 });
   const phone = h('input', {
     type: 'tel',
@@ -21,35 +28,84 @@ export function showContacts() {
   });
   const err = h('p', { class: 'error', hidden: true });
   const add = () => {
+    const contacts = S.settings.contacts;
     const p = normalisePhone(phone.value);
-    if (!name.value.trim()) {
-      err.textContent = 'Enter a name.';
+    const problem = contactProblem(name.value, p, contacts);
+    if (problem) {
+      err.textContent = problem;
       err.hidden = false;
       return;
     }
-    if (!p) {
-      err.textContent = 'Enter a valid mobile number (10 digits, or with +country code).';
-      err.hidden = false;
-      return;
-    }
-    if (st.contacts.length >= 5) {
-      err.textContent = 'You can save up to 5 contacts.';
-      err.hidden = false;
-      return;
-    }
-    if (st.contacts.some((c) => c.phone === p)) {
-      err.textContent = 'This number is already saved.';
-      err.hidden = false;
-      return;
-    }
-    const c: Contact = { id: crypto.randomUUID(), name: name.value.trim(), phone: p, notify: true };
-    S.settings = save({ contacts: [...st.contacts, c] });
-    S.view = prev;
-    showContacts();
+    const c: Contact = { id: crypto.randomUUID(), name: name.value.trim(), phone: p!, notify: true };
+    S.settings = save({ contacts: [...contacts, c] });
+    reopen();
   };
+  return [
+    h(
+      'div',
+      { class: 'add-contact' },
+      name,
+      phone,
+      h('button', { class: 'btn primary', id: 'add-contact', on: { click: add } }, 'Add contact'),
+    ),
+    err,
+  ];
+}
+
+function contactRow(c: Contact, reopen: () => void): HTMLElement {
+  const contacts = S.settings.contacts;
+  return h(
+    'li',
+    null,
+    h('div', null, h('b', null, c.name), h('small', null, c.phone)),
+    h(
+      'label',
+      { class: 'switch' },
+      h('input', {
+        type: 'checkbox',
+        checked: c.notify,
+        'aria-label': `Send arrival message to ${c.name}`,
+        on: {
+          change: (e: Event) => {
+            c.notify = (e.target as HTMLInputElement).checked;
+            S.settings = save({ contacts });
+          },
+        },
+      }),
+      'Arrival message',
+    ),
+    h(
+      'button',
+      {
+        class: 'icon-btn flat',
+        'aria-label': `Remove ${c.name}`,
+        on: {
+          click: () => {
+            S.settings = save({ contacts: contacts.filter((x) => x.id !== c.id) });
+            reopen();
+          },
+        },
+      },
+      icon('close', 16),
+    ),
+  );
+}
+
+function contactList(reopen: () => void): HTMLElement {
+  const contacts = S.settings.contacts;
+  if (!contacts.length)
+    return h('p', { class: 'hint' }, 'Add up to 5 people who should know when you reach, and who get your SOS.');
+  return h(
+    'ul',
+    { class: 'contacts' },
+    contacts.map((c) => contactRow(c, reopen)),
+  );
+}
+
+function nameField(): HTMLInputElement {
   const travName = h('input', {
     type: 'text',
-    value: st.travellerName,
+    value: S.settings.travellerName,
     placeholder: 'Your name (shown in messages)',
     'aria-label': 'Your name',
     maxlength: 30,
@@ -58,6 +114,66 @@ export function showContacts() {
     S.settings = save({ travellerName: travName.value.trim() });
     toast('Saved');
   });
+  return travName;
+}
+
+const PRIVACY_POINTS = [
+  'Your location stays on this phone. Planning routes and guidance work without sending it anywhere.',
+  'Only during a trip, and only to show your family the live link and to check you really reached, your position goes to the SafeRaah server. It is deleted the moment the trip ends.',
+  'The two questions after a trip are optional and anonymous; no trip, route or comment is kept with your answer.',
+  'Contacts and settings are kept only on this phone.',
+];
+
+/** Remove every key this app keeps on the phone, then start again. */
+function wipeAndReload(): void {
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith('saferaah-air')) localStorage.removeItem(k);
+  } catch {
+    /* storage blocked */
+  }
+  location.reload();
+}
+
+function confirmWipe(): void {
+  openModal(
+    h(
+      'div',
+      { class: 'modal-card' },
+      h('h2', null, 'Delete everything on this phone?'),
+      h('p', null, 'Removes your contacts, name, family profile and settings from SafeRaah on this phone.'),
+      h(
+        'div',
+        { class: 'row2' },
+        h('button', { class: 'btn ghost', on: { click: () => closeModal() } }, 'Cancel'),
+        h('button', { class: 'btn danger', id: 'wipe-ok', on: { click: wipeAndReload } }, 'Delete'),
+      ),
+    ),
+  );
+}
+
+/** A labelled on/off switch bound to one boolean setting. */
+function settingSwitch(key: 'voice' | 'simulate', label: string, id?: string): HTMLElement {
+  return h(
+    'label',
+    { class: 'switch' },
+    h('input', {
+      type: 'checkbox',
+      id,
+      checked: S.settings[key],
+      on: { change: (e: Event) => (S.settings = save({ [key]: (e.target as HTMLInputElement).checked })) },
+    }),
+    label,
+  );
+}
+
+export function showContacts() {
+  const prev = S.view === 'contacts' ? 'home' : S.view;
+  setView('contacts');
+  clear(top);
+  const reopen = () => {
+    S.view = prev;
+    showContacts();
+  };
   clear(
     sheet,
     h(
@@ -70,60 +186,10 @@ export function showContacts() {
       'div',
       { class: 'pad' },
       h('h3', null, 'Your name'),
-      travName,
+      nameField(),
       h('h3', null, 'Trusted contacts'),
-      st.contacts.length
-        ? h(
-            'ul',
-            { class: 'contacts' },
-            st.contacts.map((c) =>
-              h(
-                'li',
-                null,
-                h('div', null, h('b', null, c.name), h('small', null, c.phone)),
-                h(
-                  'label',
-                  { class: 'switch' },
-                  h('input', {
-                    type: 'checkbox',
-                    checked: c.notify,
-                    'aria-label': `Send arrival message to ${c.name}`,
-                    on: {
-                      change: (e: Event) => {
-                        c.notify = (e.target as HTMLInputElement).checked;
-                        S.settings = save({ contacts: st.contacts });
-                      },
-                    },
-                  }),
-                  'Arrival message',
-                ),
-                h(
-                  'button',
-                  {
-                    class: 'icon-btn flat',
-                    'aria-label': `Remove ${c.name}`,
-                    on: {
-                      click: () => {
-                        S.settings = save({ contacts: st.contacts.filter((x) => x.id !== c.id) });
-                        S.view = prev;
-                        showContacts();
-                      },
-                    },
-                  },
-                  icon('close', 16),
-                ),
-              ),
-            ),
-          )
-        : h('p', { class: 'hint' }, 'Add up to 5 people who should know when you reach, and who get your SOS.'),
-      h(
-        'div',
-        { class: 'add-contact' },
-        name,
-        phone,
-        h('button', { class: 'btn primary', id: 'add-contact', on: { click: add } }, 'Add contact'),
-      ),
-      err,
+      contactList(reopen),
+      ...addContactForm(reopen),
       h(
         'p',
         { class: 'fine' },
@@ -133,98 +199,13 @@ export function showContacts() {
       h(
         'ul',
         { class: 'privacy' },
-        h(
-          'li',
-          null,
-          'Your location stays on this phone. Planning routes and guidance work without sending it anywhere.',
-        ),
-        h(
-          'li',
-          null,
-          'Only during a trip, and only to show your family the live link and to check you really reached, your position goes to the SafeRaah server. It is deleted the moment the trip ends.',
-        ),
-        h(
-          'li',
-          null,
-          'The two questions after a trip are optional and anonymous; no trip, route or comment is kept with your answer.',
-        ),
-        h('li', null, 'Contacts and settings are kept only on this phone.'),
+        PRIVACY_POINTS.map((t) => h('li', null, t)),
       ),
-      h(
-        'button',
-        {
-          class: 'btn ghost wide',
-          id: 'wipe',
-          on: {
-            click: () => {
-              openModal(
-                h(
-                  'div',
-                  { class: 'modal-card' },
-                  h('h2', null, 'Delete everything on this phone?'),
-                  h('p', null, 'Removes your contacts, name, family profile and settings from SafeRaah on this phone.'),
-                  h(
-                    'div',
-                    { class: 'row2' },
-                    h('button', { class: 'btn ghost', on: { click: () => closeModal() } }, 'Cancel'),
-                    h(
-                      'button',
-                      {
-                        class: 'btn danger',
-                        id: 'wipe-ok',
-                        on: {
-                          click: () => {
-                            try {
-                              for (const k of Object.keys(localStorage))
-                                if (k.startsWith('saferaah-air')) localStorage.removeItem(k);
-                            } catch {
-                              /* storage blocked */
-                            }
-                            location.reload();
-                          },
-                        },
-                      },
-                      'Delete',
-                    ),
-                  ),
-                ),
-              );
-            },
-          },
-        },
-        'Delete my data on this phone',
-      ),
+      h('button', { class: 'btn ghost wide', id: 'wipe', on: { click: confirmWipe } }, 'Delete my data on this phone'),
       h('h3', null, 'Voice guidance'),
-      h(
-        'label',
-        { class: 'switch' },
-        h('input', {
-          type: 'checkbox',
-          id: 'voice-setting',
-          checked: st.voice,
-          on: {
-            change: (e: Event) => {
-              S.settings = save({ voice: (e.target as HTMLInputElement).checked });
-            },
-          },
-        }),
-        'Speak the turns during a journey',
-      ),
+      settingSwitch('voice', 'Speak the turns during a journey', 'voice-setting'),
       h('h3', null, 'Demo mode'),
-      h(
-        'label',
-        { class: 'switch' },
-        h('input', {
-          type: 'checkbox',
-          checked: st.simulate,
-          on: {
-            change: (e: Event) => {
-              S.settings = save({ simulate: (e.target as HTMLInputElement).checked });
-            },
-          },
-        }),
-        'Simulate my movement (to try the app without walking)',
-      ),
+      settingSwitch('simulate', 'Simulate my movement (to try the app without walking)'),
     ),
   );
 }

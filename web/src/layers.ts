@@ -2,6 +2,7 @@
 import { h } from './dom.ts';
 import { icon, REPORT_ICON } from './icons.ts';
 import { live, liveAvailable } from './api.ts';
+import type { LinesFC } from './worker-api.ts';
 import { REPORT_KINDS, isAirReport, type ReportKind } from '../../shared/live.ts';
 import { type LonLat } from '../../shared/geo.ts';
 import { S, closeModal, myAcc, myLonLat, now, openModal, rpc, smap, toast, hooks } from './app.ts';
@@ -12,7 +13,7 @@ export async function refreshSafety() {
   if (!smap || !S.settings.layers.safety || smap.map.getZoom() < 13.5) return;
   const b = smap.map.getBounds();
   const seq = ++safetySeq;
-  const r = await rpc<{ fc: any }>({
+  const r = await rpc<{ fc: LinesFC }>({
     type: 'safetyLines',
     bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
     when: now().toISOString(),
@@ -27,7 +28,7 @@ export async function refreshAirLayer() {
   if (!smap || !S.settings.layers.air || smap.map.getZoom() < 12.5) return;
   const b = smap.map.getBounds();
   const seq = ++airSeq;
-  const r = await rpc<{ fc: any }>({
+  const r = await rpc<{ fc: LinesFC }>({
     type: 'airLines',
     bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
     limit: 6000,
@@ -115,63 +116,77 @@ function openReportPopup(id: string) {
   }
 }
 
+/** Without a location we can't accept a report: offer to mark it on the map. */
+function askForLocation(): void {
+  openModal(
+    h(
+      'div',
+      { class: 'modal-card' },
+      h('h2', null, 'Report a problem here'),
+      h('p', null, 'You can only report what is happening near you, so we need your location.'),
+      h(
+        'button',
+        {
+          class: 'btn primary wide',
+          on: {
+            click: () => {
+              closeModal();
+              hooks.startPick('me');
+            },
+          },
+        },
+        'Mark where I am on the map',
+      ),
+      h('button', { class: 'btn ghost wide', on: { click: () => closeModal() } }, 'Cancel'),
+    ),
+  );
+}
+
+async function sendReport(kind: ReportKind, me: LonLat): Promise<void> {
+  try {
+    const r = await live.report(kind, me, { lon: me[0], lat: me[1], acc: S.journey ? S.myPos!.acc : myAcc() });
+    closeModal();
+    const routes = isAirReport(kind) ? 'clean-air routes' : 'routes';
+    toast(
+      r.merged
+        ? 'Thanks. Someone reported this too, so it now counts more.'
+        : `Thanks. Others will see this for about ${REPORT_KINDS[kind].hours} h, and ${routes} will avoid it.`,
+      5000,
+    );
+    refreshReports(true);
+  } catch (err) {
+    toast((err as Error).message, 5000);
+  }
+}
+
+/** The buttons for one group of report kinds (air first, then street safety). */
+function reportGrid(air: boolean, me: LonLat): HTMLElement {
+  const kinds = (Object.keys(REPORT_KINDS) as ReportKind[]).filter((k) => isAirReport(k) === air);
+  return h(
+    'div',
+    { class: 'report-grid' },
+    kinds.map((k) =>
+      h(
+        'button',
+        {
+          class: `report-kind${isAirReport(k) ? ' air' : REPORT_KINDS[k].danger ? '' : ' good'}`,
+          'data-kind': k,
+          on: { click: () => sendReport(k, me) },
+        },
+        h('span', { class: 'rk-ic' }, icon(REPORT_ICON[k], 24)),
+        REPORT_KINDS[k].label,
+      ),
+    ),
+  );
+}
+
 export function openReport() {
   const me = S.journey && S.myPos ? ([S.myPos.lon, S.myPos.lat] as LonLat) : myLonLat();
   if (!liveAvailable()) {
     toast('Live reports need an internet connection.', 5000);
     return;
   }
-  if (!me) {
-    openModal(
-      h(
-        'div',
-        { class: 'modal-card' },
-        h('h2', null, 'Report a problem here'),
-        h('p', null, 'You can only report what is happening near you, so we need your location.'),
-        h(
-          'button',
-          {
-            class: 'btn primary wide',
-            on: {
-              click: () => {
-                closeModal();
-                hooks.startPick('me');
-              },
-            },
-          },
-          'Mark where I am on the map',
-        ),
-        h('button', { class: 'btn ghost wide', on: { click: () => closeModal() } }, 'Cancel'),
-      ),
-    );
-    return;
-  }
-  const send = async (kind: ReportKind) => {
-    try {
-      const r = await live.report(kind, me, { lon: me[0], lat: me[1], acc: S.journey ? S.myPos!.acc : myAcc() });
-      closeModal();
-      toast(
-        r.merged
-          ? 'Thanks. Someone reported this too, so it now counts more.'
-          : `Thanks. Others will see this for about ${REPORT_KINDS[kind].hours} h, and ${isAirReport(kind) ? 'clean-air routes' : 'routes'} will avoid it.`,
-        5000,
-      );
-      refreshReports(true);
-    } catch (err) {
-      toast((err as Error).message, 5000);
-    }
-  };
-  const kindBtn = (k: ReportKind) =>
-    h(
-      'button',
-      {
-        class: `report-kind${isAirReport(k) ? ' air' : REPORT_KINDS[k].danger ? '' : ' good'}`,
-        'data-kind': k,
-        on: { click: () => send(k) },
-      },
-      h('span', { class: 'rk-ic' }, icon(REPORT_ICON[k], 24)),
-      REPORT_KINDS[k].label,
-    );
+  if (!me) return askForLocation();
   openModal(
     h(
       'div',
@@ -183,17 +198,9 @@ export function openReport() {
         'Your report is anonymous and expires in a few hours. Routes for everyone steer around it until then.',
       ),
       h('h3', { class: 'rk-group' }, 'Air'),
-      h(
-        'div',
-        { class: 'report-grid' },
-        (Object.keys(REPORT_KINDS) as ReportKind[]).filter((k) => isAirReport(k)).map((k) => kindBtn(k)),
-      ),
+      reportGrid(true, me),
       h('h3', { class: 'rk-group' }, 'Street safety'),
-      h(
-        'div',
-        { class: 'report-grid' },
-        (Object.keys(REPORT_KINDS) as ReportKind[]).filter((k) => !isAirReport(k)).map((k) => kindBtn(k)),
-      ),
+      reportGrid(false, me),
       h('p', { class: 'fine' }, 'In danger right now? Use SOS or call 112.'),
       h('button', { class: 'btn ghost wide', on: { click: () => closeModal() } }, 'Cancel'),
     ),

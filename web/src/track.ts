@@ -1,7 +1,7 @@
 // The live trip page a trusted contact opens from a shared link (no app needed).
 import { h, clear } from './dom.ts';
 import { icon } from './icons.ts';
-import { api } from './api.ts';
+import { api, type SharedTrip } from './api.ts';
 import { telLink } from './messages.ts';
 import type { WorkerRoute } from './worker.ts';
 import { clockText, setView, sheet, smap, top, fitPad } from './app.ts';
@@ -12,7 +12,7 @@ export async function showTrack(shareId: string) {
   clear(top);
   let first = true;
   const draw = async () => {
-    let d: any;
+    let d: SharedTrip;
     try {
       d = await api.share(shareId);
     } catch (err) {
@@ -50,7 +50,9 @@ export async function showTrack(shareId: string) {
         h(
           'p',
           null,
-          d.status === 'arrived' ? `Arrived at ${clockText(new Date(d.arrivedAt))}.` : `Expected by ${clockText(eta)}.`,
+          d.status === 'arrived'
+            ? `Arrived at ${clockText(new Date(d.arrivedAt ?? Date.now()))}.`
+            : `Expected by ${clockText(eta)}.`,
         ),
         d.last
           ? h('p', { class: 'meta' }, `Last seen ${Math.max(0, Math.round((Date.now() - d.last.t) / 60000))} min ago.`)

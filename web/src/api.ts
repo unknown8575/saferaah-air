@@ -51,6 +51,28 @@ export interface JourneyHandle {
   shareId: string;
 }
 
+/** What the server says when a trip ends: arrived, and whether it may be reviewed. */
+export interface FinishResult {
+  arrived: boolean;
+  eligible: boolean;
+  coverage: number;
+  reasons: string[];
+  reviewToken: string | null;
+}
+
+/** What a trusted contact's share link shows (server/routes/journeys.ts sharedTrip). */
+export interface SharedTrip {
+  status: 'active' | 'sos' | 'arrived' | 'ended' | 'expired';
+  mode: string;
+  name: string | null;
+  route: LonLat[];
+  dest: LonLat | null;
+  etaS: number;
+  startedAt: number;
+  arrivedAt: number | null;
+  last: { t: number; lon: number; lat: number; acc: number } | null;
+}
+
 export const api = {
   crowd: (v: string) =>
     call<{ v: string; stats: [number, number, number][] }>('GET', `api/crowd?v=${encodeURIComponent(v)}`),
@@ -66,12 +88,7 @@ export const api = {
   }) => call<JourneyHandle>('POST', 'api/journeys', b),
   pushFixes: (j: JourneyHandle, fixes: Fix[]) =>
     call<{ ok: boolean }>('POST', `api/journeys/${j.id}/fixes`, { token: j.token, fixes }),
-  finish: (j: JourneyHandle) =>
-    call<{ arrived: boolean; eligible: boolean; coverage: number; reasons: string[]; reviewToken: string | null }>(
-      'POST',
-      `api/journeys/${j.id}/finish`,
-      { token: j.token },
-    ),
+  finish: (j: JourneyHandle) => call<FinishResult>('POST', `api/journeys/${j.id}/finish`, { token: j.token }),
   sos: (j: JourneyHandle, contacts: string[], message: string) =>
     call<{ ok: boolean; smsSent: number }>('POST', `api/journeys/${j.id}/sos`, { token: j.token, contacts, message }),
   notify: (j: JourneyHandle, contacts: string[], message: string) =>
@@ -91,7 +108,7 @@ export const api = {
       fallback: boolean;
       reason: string | null;
     }>('POST', 'api/assistant', b),
-  share: (shareId: string) => call<any>('GET', `api/share/${encodeURIComponent(shareId)}`),
+  share: (shareId: string) => call<SharedTrip>('GET', `api/share/${encodeURIComponent(shareId)}`),
   reroute: (j: JourneyHandle, route: LonLat[], edges: number[], etaS: number) =>
     call<{ ok: boolean }>('POST', `api/journeys/${j.id}/route`, { token: j.token, route, edges, etaS }),
   reports: (bbox: [number, number, number, number]) =>
@@ -107,7 +124,44 @@ export const api = {
 // database. There the same rules the server enforces (near the spot, merge duplicates,
 // a few reports per hour) are applied in the app, so the preview still shows live
 // reports from everyone who opens it.
-type Store = { collection(p: string): any; doc(p: string): any };
+/** The parts of the preview host's document store this file uses (see initPreviewStore). */
+interface StoredReport {
+  kind: ReportKind;
+  lon: number;
+  lat: number;
+  by: string;
+  createdAt: number;
+  expiresAt: number;
+}
+interface StoredVote {
+  report: string;
+  device: string;
+  still: boolean;
+  at: number;
+}
+interface DocSnap<T> {
+  id: string;
+  exists: boolean;
+  data(): T;
+}
+interface Query<T> {
+  where(field: string, op: '==' | '>', value: unknown): Query<T>;
+  limit(n: number): Query<T>;
+  get(): Promise<{ size: number; docs: DocSnap<T>[] }>;
+}
+interface Collection<T> extends Query<T> {
+  add(v: T): Promise<{ id: string }>;
+}
+interface DocRef<T> {
+  get(): Promise<DocSnap<T>>;
+  set(v: T): Promise<void>;
+}
+interface Store {
+  collection(p: 'reports'): Collection<StoredReport>;
+  collection(p: 'votes'): Collection<StoredVote>;
+  doc(p: `reports/${string}`): DocRef<StoredReport>;
+  doc(p: `votes/${string}`): DocRef<StoredVote>;
+}
 let store: Store | null = null;
 export async function initPreviewStore(): Promise<boolean> {
   const c = (window as unknown as { claude?: { use?: (n: string) => Promise<unknown> } }).claude;
@@ -205,14 +259,14 @@ export const live = {
       .where('expiresAt', '>', now)
       .limit(500)
       .get();
-    const near = same.docs.find((d: any) => dist([d.data().lon, d.data().lat], spot) <= 80);
-    let id: string = near?.id;
-    if (!id) {
-      const ref = await store
-        .collection('reports')
-        .add({ kind, lon: spot[0], lat: spot[1], by: dev, createdAt: now, expiresAt: now + HOURS[kind] * 3600000 });
-      id = ref.id;
-    }
+    const near = same.docs.find((d) => dist([d.data().lon, d.data().lat], spot) <= 80);
+    const id =
+      near?.id ??
+      (
+        await store
+          .collection('reports')
+          .add({ kind, lon: spot[0], lat: spot[1], by: dev, createdAt: now, expiresAt: now + HOURS[kind] * 3600000 })
+      ).id;
     await store.doc(`votes/${id}_${dev}`).set({ report: id, device: dev, still: true, at: now });
     return { ok: true, id, merged: !!near };
   },

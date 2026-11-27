@@ -5,9 +5,10 @@ import type { SafeMap } from './map.ts';
 import type { PlaceSearch } from './search.ts';
 import { icon } from './icons.ts';
 import { load } from './store.ts';
-import type { JourneyHandle } from './api.ts';
+import type { FinishResult, JourneyHandle } from './api.ts';
 import type { PositionSource } from './location.ts';
 import type { RouteReply, WorkerRoute } from './worker.ts';
+import type { WorkerRequest } from './worker-api.ts';
 import type { Tier } from '../../shared/router.ts';
 import { type Poi, type PoiCat } from '../../shared/places.ts';
 import type { Mode } from '../../shared/modes.ts';
@@ -26,7 +27,7 @@ export const DEMO_ME: LonLat = [77.2197, 28.6328]; // Rajiv Chowk
 // ---------- worker RPC ----------
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
 let rpcId = 0;
-const pending = new Map<number, { res: (v: any) => void; rej: (e: Error) => void }>();
+const pending = new Map<number, { res: (v: unknown) => void; rej: (e: Error) => void }>();
 worker.onmessage = (ev) => {
   const p = pending.get(ev.data.id);
   if (!p) return;
@@ -34,10 +35,10 @@ worker.onmessage = (ev) => {
   if (ev.data.type === 'error') p.rej(new Error(ev.data.message));
   else p.res(ev.data);
 };
-export function rpc<T = any>(msg: Record<string, unknown>): Promise<T> {
+export function rpc<T = unknown>(msg: WorkerRequest): Promise<T> {
   const id = ++rpcId;
   return new Promise((res, rej) => {
-    pending.set(id, { res, rej });
+    pending.set(id, { res: res as (v: unknown) => void, rej });
     worker.postMessage({ ...msg, id });
   });
 }
@@ -114,7 +115,7 @@ export const S = {
     offRoute: boolean;
     tickTimer: ReturnType<typeof setInterval>;
     pushTimer: ReturnType<typeof setInterval>;
-    result?: any;
+    result?: FinishResult | null;
     sos?: boolean;
     rerouting?: boolean;
     lastReroute: number;
@@ -125,7 +126,9 @@ export const S = {
     islandOpen: boolean;
   },
 };
-(window as any).__sr = { S, rpc };
+/** for the end-to-end tests and debugging: the app state, the worker and (once loaded) the map */
+export const debugHandle: { S: typeof S; rpc: typeof rpc; map?: unknown } = { S, rpc };
+(window as unknown as { __sr: typeof debugHandle }).__sr = debugHandle;
 
 export const now = () => S.leaveAt ?? new Date();
 export const inCoverage = (p: LonLat) =>

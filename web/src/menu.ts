@@ -7,7 +7,7 @@ import { liveAvailable, livePreview } from './api.ts';
 import { telLink } from './messages.ts';
 import { TIER_INFO, type Tier } from '../../shared/router.ts';
 import { S, closeModal, openModal, smap, hooks } from './app.ts';
-import { openSos } from './journey.ts';
+import { openSos } from './sos.ts';
 import { drawReports, refreshAirLayer, refreshSafety } from './layers.ts';
 import { showContacts, showHelp } from './settings.ts';
 
@@ -80,111 +80,50 @@ export function openLayers() {
   );
 }
 
+/** A menu row that closes the menu, then does something. */
+function menuRow(
+  ic: string,
+  label: string,
+  run: () => void,
+  opts: { id?: string; danger?: boolean } = {},
+): HTMLElement {
+  const go = () => {
+    closeModal();
+    run();
+  };
+  return h(
+    'button',
+    { class: `menu-row${opts.danger ? ' danger' : ''}`, id: opts.id, on: { click: go } },
+    h('span', { class: 'mi' }, icon(ic, 18)),
+    label,
+  );
+}
+
+function callRow(number: string, label: string, danger = false): HTMLElement {
+  return h(
+    'a',
+    { class: `menu-row${danger ? ' danger' : ''}`, href: telLink(number) },
+    h('span', { class: 'mi' }, icon('phone', 18)),
+    label,
+  );
+}
+
+/** Air tools first; family safety (the optional add-on) in its own section. */
 export function openMenu() {
   openModal(
     h(
       'div',
       { class: 'modal-card menu' },
       h('div', { class: 'brand' }, h('span', { class: 'logo', 'aria-hidden': 'true' }), 'SafeRaah'),
-      h(
-        'button',
-        {
-          class: 'menu-row',
-          id: 'menu-saans',
-          on: {
-            click: () => {
-              closeModal();
-              hooks.askSaans();
-            },
-          },
-        },
-        h('span', { class: 'mi' }, icon('sparkle', 18)),
-        'Saans: clean-air assistant',
-      ),
-      h(
-        'button',
-        {
-          class: 'menu-row',
-          on: {
-            click: () => {
-              closeModal();
-              openLayers();
-            },
-          },
-        },
-        h('span', { class: 'mi' }, icon('layers', 18)),
-        'Map layers (street air, safety)',
-      ),
-      h(
-        'button',
-        {
-          class: 'menu-row',
-          on: {
-            click: () => {
-              closeModal();
-              showHelp();
-            },
-          },
-        },
-        h('span', { class: 'mi' }, icon('help', 18)),
-        'How to use SafeRaah',
-      ),
+      menuRow('sparkle', 'Saans: clean-air assistant', () => hooks.askSaans(), { id: 'menu-saans' }),
+      menuRow('layers', 'Map layers (street air, safety)', openLayers),
+      menuRow('help', 'How to use SafeRaah', showHelp),
       h('h3', { class: 'menu-sect' }, 'Family safety'),
-      h(
-        'button',
-        {
-          class: 'menu-row',
-          on: {
-            click: () => {
-              closeModal();
-              hooks.showCategory('safe');
-            },
-          },
-        },
-        h('span', { class: 'mi' }, icon('police', 18)),
-        'Safe places near me',
-      ),
-      h(
-        'button',
-        {
-          class: 'menu-row',
-          on: {
-            click: () => {
-              closeModal();
-              showContacts();
-            },
-          },
-        },
-        h('span', { class: 'mi' }, icon('contacts', 18)),
-        'Trusted contacts & settings',
-      ),
-      h(
-        'button',
-        {
-          class: 'menu-row danger',
-          id: 'menu-sos',
-          on: {
-            click: () => {
-              closeModal();
-              openSos();
-            },
-          },
-        },
-        h('span', { class: 'mi' }, icon('alert', 18)),
-        'SOS: alert my contacts',
-      ),
-      h(
-        'a',
-        { class: 'menu-row danger', href: telLink('112') },
-        h('span', { class: 'mi' }, icon('phone', 18)),
-        'Call 112 (emergency)',
-      ),
-      h(
-        'a',
-        { class: 'menu-row', href: telLink('1091') },
-        h('span', { class: 'mi' }, icon('phone', 18)),
-        'Women helpline 1091',
-      ),
+      menuRow('police', 'Safe places near me', () => hooks.showCategory('safe')),
+      menuRow('contacts', 'Trusted contacts & settings', showContacts),
+      menuRow('alert', 'SOS: alert my contacts', openSos, { id: 'menu-sos', danger: true }),
+      callRow('112', 'Call 112 (emergency)', true),
+      callRow('1091', 'Women helpline 1091'),
       h('button', { class: 'btn ghost wide', on: { click: () => closeModal() } }, 'Close'),
     ),
   );
