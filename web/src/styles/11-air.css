@@ -1,0 +1,121 @@
+/* Clean air: the AQI card and route air lines. */
+/* ============================================================================
+   Clean air: AQI card, route air lines, Saans assistant
+   ========================================================================== */
+.aqi-card {
+  --band: var(--ink-3);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 10px 0 4px;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--r-card);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--band) 16%, var(--surface)), var(--surface) 70%);
+  box-shadow:
+    inset 0 0 0 0.5px var(--hair),
+    var(--shadow-1);
+  text-align: left;
+  transition: transform 0.35s var(--spring);
+}
+.aqi-card:active {
+  transform: scale(0.98);
+}
+.aqi-ring {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 4px var(--band),
+    0 4px 14px color-mix(in srgb, var(--band) 35%, transparent);
+}
+.aqi-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.aqi-txt b {
+  font-size: 1rem;
+  letter-spacing: -0.015em;
+}
+.aqi-txt small {
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+}
+.aqi-ask {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 16px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #0b7a62, #0062cc);
+  box-shadow: 0 4px 12px rgba(10, 132, 255, 0.28);
+}
+
+.rc-air {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+}
+.rc-air.better {
+  color: var(--t-green-ink);
+  font-weight: 600;
+}
+.lbl-cleanest-air {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: color-mix(in srgb, #34c3a0 18%, transparent);
+  color: #0a6b53;
+}
+:root[data-theme='night'] .lbl-cleanest-air {
+  color: #5fe0bd;
+}
+.air-note {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.facts li.good {
+  color: var(--t-green-ink);
+}
+.tradeoff {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--r-small);
+  font-size: 0.875rem;
+  background: color-mix(in srgb, var(--t-yellow) 14%, transparent);
+  color: var(--t-yellow-ink);
+}
+.rk-group {
+  margin: 14px 0 6px;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+.report-kind.air .rk-ic {
+  background: #8e8e93;
+}
+.report-pin.air {
+  background: #8e8e93;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
+}

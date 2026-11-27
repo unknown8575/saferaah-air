@@ -1,0 +1,275 @@
+/* Modal sheets, arrival and the review. */
+/* ---------- modal (iOS-style sheet) ---------- */
+#modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.32);
+  animation: fade 0.3s var(--ease);
+  padding: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+#modal[hidden] {
+  display: none;
+}
+.modal-card:focus {
+  outline: none;
+}
+.modal-card {
+  width: 100%;
+  max-width: 440px;
+  max-height: 88vh;
+  overflow: auto;
+  padding: 22px 20px 16px;
+  border-radius: 28px;
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow-2);
+  animation: sheet-up 0.55s var(--spring);
+}
+@media (min-width: 600px) {
+  #modal {
+    align-items: center;
+  }
+  .modal-card {
+    animation: pop 0.45s var(--spring);
+  }
+}
+.modal-card h2 {
+  margin-bottom: 8px;
+}
+.modal-card .btn.wide + .btn.wide {
+  margin-top: 8px;
+}
+.checkin .countdown {
+  font-size: 3.5rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  text-align: center;
+  margin: 8px 0;
+  font-variant-numeric: tabular-nums;
+}
+.sos-card h2 {
+  color: var(--sos);
+}
+.msg-preview {
+  background: var(--fill);
+  padding: 12px 14px;
+  border-radius: 16px 16px 16px 4px;
+  font-size: 0.9375rem;
+}
+ul.helplines {
+  gap: 4px;
+}
+ul.helplines a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.layer-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 12px 0;
+  cursor: pointer;
+  border-bottom: 0.5px solid var(--hair);
+}
+.layer-row input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 51px;
+  height: 31px;
+  border-radius: 16px;
+  background: var(--fill-2);
+  position: relative;
+  margin: 2px 0 0;
+  cursor: pointer;
+  transition: background 0.25s var(--ease);
+}
+.layer-row input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.15),
+    0 1px 1px rgba(0, 0, 0, 0.16);
+  transition: transform 0.35s var(--spring);
+}
+.layer-row input:checked {
+  background: var(--t-green);
+}
+.layer-row input:checked::after {
+  transform: translateX(20px);
+}
+.layer-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.layer-row small {
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+}
+.legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+  padding: 8px 0 4px 65px;
+}
+.legend i {
+  display: inline-block;
+  width: 18px;
+  height: 5px;
+  border-radius: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.report-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 14px 0;
+}
+.report-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--r-card);
+  padding: 14px 8px;
+  min-height: 96px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 0.5px var(--hair);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: center;
+  transition:
+    transform 0.25s var(--spring),
+    background 0.2s var(--ease);
+}
+.report-kind:active {
+  transform: scale(0.95);
+  background: var(--fill);
+}
+.rk-ic {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--t-red);
+}
+.report-kind.good .rk-ic {
+  background: #3a5bd9;
+}
+.menu .brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 1.375rem;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+}
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 10px 2px;
+  min-height: 52px;
+  font-size: 1.0625rem;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 0.5px solid var(--hair);
+}
+.menu-row:last-of-type {
+  border-bottom: 0;
+}
+.mi {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-fill);
+  color: #fff;
+  flex: none;
+}
+.menu-row.danger {
+  color: var(--sos);
+  font-weight: 600;
+}
+.menu-row.danger .mi {
+  background: var(--sos);
+}
+
+/* ---------- arrival & review ---------- */
+.arrived-mark {
+  width: 84px;
+  height: 84px;
+  margin: 6px auto 10px;
+  border-radius: 50%;
+  background: var(--t-green);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--t-green) 40%, transparent);
+  animation: pop 0.7s var(--spring) both;
+}
+.arrived-mark svg {
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: draw 0.6s 0.25s var(--ease) forwards;
+}
+.review h3 {
+  margin-top: 18px;
+}
+.stars {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-start;
+  margin: 4px 0;
+}
+.star {
+  border: 0;
+  background: none;
+  padding: 4px;
+  color: var(--ink-3);
+  transition:
+    transform 0.3s var(--spring),
+    color 0.2s var(--ease);
+}
+.star.on {
+  color: #ffcc00;
+}
+.star.on svg {
+  fill: currentColor;
+}
+.star:active {
+  transform: scale(1.2);
+}
+.chips.wrap {
+  margin-top: 4px;
+}

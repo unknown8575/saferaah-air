@@ -1,0 +1,204 @@
+/* The time / safety / air picker, AQI band pills and the air-first home. */
+/* what matters most: fastest / safest / cleanest air */
+.prio {
+  display: flex;
+  gap: 4px;
+  margin: 4px 18px 10px;
+  padding: 3px;
+  border-radius: 13px;
+  background: var(--fill);
+}
+.prio-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  transition:
+    background 0.25s var(--ease),
+    color 0.25s var(--ease);
+}
+.prio-btn.on {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: var(--shadow-1);
+}
+.prio-btn[data-prio='air'].on svg {
+  color: #128a6c;
+}
+.prio-btn[data-prio='safest'].on svg {
+  color: var(--t-green-ink);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* AQI band pill: dark text on the light bands, white only on the darkest (WCAG AA contrast) */
+.band-pill {
+  color: #1d1d1f;
+}
+.band-pill[data-band='severe'] {
+  color: #fff;
+}
+:root[data-theme='night'] .plan-impact {
+  color: #5fe0bd;
+}
+
+/* ---------- air-first home ---------- */
+.air-home {
+  --band: var(--ink-3);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+.air-title {
+  margin: 2px 0 0;
+  font-size: 1.375rem;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.air-title small {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  letter-spacing: 0;
+}
+.air-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: 20px;
+  text-align: left;
+  background: linear-gradient(140deg, color-mix(in srgb, var(--band) 20%, var(--surface)), var(--surface) 72%);
+  box-shadow:
+    inset 0 0 0 0.5px var(--hair),
+    var(--shadow-1);
+  transition: transform 0.35s var(--spring);
+}
+.air-hero:active {
+  transform: scale(0.985);
+}
+.aqi-ring.big {
+  width: 64px;
+  height: 64px;
+  font-size: 1.375rem;
+  box-shadow:
+    inset 0 0 0 5px var(--band),
+    0 6px 18px color-mix(in srgb, var(--band) 35%, transparent);
+}
+.conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.conditions li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 12px;
+  background: var(--fill);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.smog {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 0.875rem;
+  line-height: 1.38;
+  background: var(--fill);
+}
+.smog svg {
+  margin-top: 2px;
+  flex: none;
+}
+.smog-high,
+.smog-severe {
+  background: color-mix(in srgb, #7b2cbf 14%, var(--surface));
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 #7b2cbf;
+}
+.smog-moderate {
+  box-shadow: inset 3px 0 0 #ff9f0a;
+}
+.best-time {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  margin: 0;
+  font-size: 0.9375rem;
+}
+.best-time svg {
+  margin-top: 3px;
+  flex: none;
+  color: #a35d00;
+}
+:root[data-theme='night'] .best-time svg {
+  color: #ffb340;
+}
+.home-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home-plan li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+.home-plan li svg {
+  margin-top: 2px;
+  flex: none;
+  color: var(--ink-2);
+}
+.home-actions {
+  display: flex;
+  gap: 8px;
+}
+.home-actions .btn {
+  flex: 1;
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  padding: 0 12px;
+}
+.menu-sect {
+  margin: 14px 4px 4px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}

@@ -1,0 +1,276 @@
+/* The bottom sheet and buttons. */
+/* ---------- bottom sheet ---------- */
+#sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  max-height: 46vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0 calc(14px + env(safe-area-inset-bottom));
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow:
+    0 -1px 0 var(--hair),
+    0 -12px 40px rgba(0, 0, 0, 0.12);
+  transition: max-height 0.5s var(--spring);
+}
+#sheet:empty {
+  display: none;
+}
+#sheet.v-directions,
+#sheet.v-place {
+  max-height: 42vh;
+}
+#sheet.v-category {
+  max-height: 46vh;
+}
+#sheet.v-details {
+  max-height: 64vh;
+}
+#sheet.v-arrived {
+  max-height: 82vh;
+}
+#sheet.v-contacts,
+#sheet.v-help,
+#sheet.v-track {
+  max-height: 90vh;
+  background: var(--canvas);
+}
+#sheet.expanded {
+  max-height: 84vh !important;
+}
+#sheet.enter > * {
+  animation: rise 0.5s var(--spring) both;
+}
+#sheet.enter > *:nth-child(2) {
+  animation-delay: 0.03s;
+}
+#sheet.enter > *:nth-child(3) {
+  animation-delay: 0.06s;
+}
+#sheet.enter > *:nth-child(n + 4) {
+  animation-delay: 0.09s;
+}
+.grip {
+  width: 38px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--fill-2);
+  margin: 5px auto 8px;
+  cursor: pointer;
+  position: relative;
+}
+.grip::before {
+  content: '';
+  position: absolute;
+  inset: -12px -50px;
+}
+
+@media (min-width: 860px) {
+  #top {
+    left: 20px;
+    right: auto;
+    width: 400px;
+    top: 18px;
+  }
+  #sheet {
+    left: 20px;
+    right: auto;
+    top: calc(var(--top-h, 0px) + 32px);
+    bottom: auto;
+    width: 400px;
+    max-height: calc(100vh - var(--top-h, 0px) - 52px) !important;
+    border-radius: 22px;
+    box-shadow:
+      var(--shadow-2),
+      inset 0 0 0 0.5px var(--hair);
+  }
+  body[data-view='contacts'] #sheet,
+  body[data-view='help'] #sheet,
+  body[data-view='arrived'] #sheet,
+  body[data-view='track'] #sheet {
+    top: 20px;
+  }
+  .grip {
+    display: none;
+  }
+  #fabs {
+    bottom: 116px !important;
+    right: 24px;
+  }
+  .sos {
+    bottom: 30px !important;
+    right: 24px;
+  }
+  .catchips {
+    margin: 0;
+    padding-left: 0;
+  }
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--r-ctl);
+  background: var(--fill);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 1rem;
+  text-decoration: none;
+  letter-spacing: -0.01em;
+  transition:
+    transform 0.25s var(--spring),
+    background 0.2s var(--ease),
+    opacity 0.2s var(--ease);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn.primary {
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.btn.ghost {
+  background: transparent;
+  color: var(--accent);
+}
+.btn.danger {
+  background: var(--sos);
+  color: #fff;
+}
+.btn.ok {
+  background: var(--t-green);
+  color: #fff;
+}
+.btn.small {
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 0.875rem;
+  border-radius: 18px;
+}
+.btn.wide {
+  width: 100%;
+  margin-top: 8px;
+}
+.btn.big {
+  min-height: 60px;
+  font-size: 1.125rem;
+}
+.btn:disabled {
+  opacity: 0.4;
+  transform: none;
+}
+.icon-btn.flat {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--fill);
+  color: var(--ink-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  transition: transform 0.25s var(--spring);
+}
+.icon-btn.flat:active {
+  transform: scale(0.9);
+}
+.row2 {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+.row2 > * {
+  flex: 1;
+}
+.actions {
+  padding: 12px 20px 4px;
+  display: flex;
+  gap: 10px;
+}
+.actions > .btn {
+  flex: 1;
+  white-space: nowrap;
+}
+.actions.sticky {
+  position: sticky;
+  bottom: calc(-14px - env(safe-area-inset-bottom));
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  background: linear-gradient(to bottom, transparent, var(--glass-strong) 28%);
+}
+.back {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex: none;
+  padding: 0;
+  transition: background 0.2s var(--ease);
+}
+.back:active {
+  background: var(--fill);
+}
+
+/* chips (toggles) */
+.chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--fill);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  transition:
+    background 0.2s var(--ease),
+    color 0.2s var(--ease),
+    transform 0.25s var(--spring);
+}
+.chip:active {
+  transform: scale(0.95);
+}
+.chip.on {
+  background: var(--accent-fill);
+  color: #fff;
+}
+.chip.mini {
+  min-height: 34px;
+  font-size: 0.875rem;
+}
+.chip.time {
+  gap: 4px;
+  padding-right: 8px;
+}
+.time-input {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  min-width: 84px;
+  color: inherit;
+  font-weight: 500;
+}

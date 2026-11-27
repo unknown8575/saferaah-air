@@ -1,0 +1,203 @@
+/* Contacts and settings, loading and toasts. */
+/* ---------- contacts & settings (inset grouped, like Settings) ---------- */
+#sheet.v-contacts h3,
+#sheet.v-help h3 {
+  margin: 26px 4px 8px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  letter-spacing: 0;
+}
+#sheet.v-help > p,
+#sheet.v-help > h3,
+#sheet.v-help > ul {
+  margin-left: 20px;
+  margin-right: 20px;
+}
+ul.contacts {
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 0.5px var(--hair);
+}
+ul.contacts li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  position: relative;
+}
+ul.contacts li + li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 0;
+  height: 0.5px;
+  background: var(--hair);
+}
+ul.contacts li > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+ul.contacts small {
+  color: var(--ink-2);
+}
+.add-contact {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+input[type='text'],
+input[type='tel'],
+textarea {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 13px 14px;
+  font-size: 1rem;
+  box-shadow: inset 0 0 0 0.5px var(--hair);
+  outline: none;
+  transition: box-shadow 0.2s var(--ease);
+}
+input[type='text']:focus,
+input[type='tel']:focus,
+textarea:focus {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.switch {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.switch input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 42px;
+  height: 26px;
+  border-radius: 13px;
+  background: var(--fill-2);
+  position: relative;
+  margin: 0;
+  cursor: pointer;
+  transition: background 0.25s var(--ease);
+}
+.switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  transition: transform 0.35s var(--spring);
+}
+.switch input:checked {
+  background: var(--t-green);
+}
+.switch input:checked::after {
+  transform: translateX(16px);
+}
+ul.privacy {
+  margin: 0;
+  padding: 14px 16px 14px 32px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 0.5px var(--hair);
+  font-size: 0.9375rem;
+}
+ul.privacy li {
+  margin: 4px 0;
+}
+ul.privacy li::marker {
+  color: var(--t-green);
+}
+
+/* help */
+.guides {
+  display: grid;
+  gap: 14px;
+}
+.guide {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 0.5px var(--hair);
+}
+.guide img {
+  width: 120px;
+  height: auto;
+  border-radius: 14px;
+  background: var(--fill);
+}
+.guide figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9375rem;
+}
+.guide figcaption span {
+  color: var(--ink-2);
+  font-size: 0.875rem;
+}
+
+/* ---------- loading, toast ---------- */
+.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 30px 20px;
+  color: var(--ink-2);
+}
+.loading.small {
+  padding: 22px;
+}
+.spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2.5px solid var(--fill-2);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+#toast {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--top-h, 60px) + 24px);
+  z-index: 60;
+  max-width: min(92vw, 440px);
+  padding: 12px 18px;
+  border-radius: 20px;
+  background: rgba(29, 29, 31, 0.9);
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow-2);
+  opacity: 0;
+  transform: translate(-50%, -14px) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity 0.3s var(--ease),
+    transform 0.45s var(--spring);
+}
+#toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
