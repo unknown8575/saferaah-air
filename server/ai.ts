@@ -9,15 +9,7 @@
 //   GEMINI_DAILY_LIMIT    most Gemini answers per day for the whole server (default 500)
 // Without them the assistant uses its built-in engine and air comes from Open-Meteo.
 import { createHash } from 'node:crypto';
-import {
-  parseOpenMeteo,
-  parseWeather,
-  parseSensors,
-  aqiFrom,
-  AIR_URL,
-  WEATHER_URL,
-  type AirNow,
-} from '../shared/air.ts';
+import { parseOpenMeteo, parseWeather, parseSensors, aqiOf, AIR_URL, WEATHER_URL, type AirNow } from '../shared/air.ts';
 import { NOTES } from '../shared/saans/knowledge.ts';
 import { cosine } from '../shared/saans/retrieve.ts';
 import {
@@ -132,6 +124,13 @@ const META = 'http://metadata.google.internal/computeMetadata/v1';
 const CACHE_MS = 10 * 60000;
 const CACHE_MAX = 300;
 const AIR_CACHE_MAX = 200;
+/** Maps keep insertion order, so the first key is the oldest entry. */
+function dropOldest<K, V>(m: Map<K, V>): void {
+  for (const k of m.keys()) {
+    m.delete(k);
+    return;
+  }
+}
 const BREAKER_FAILS = 3;
 const BREAKER_MS = 60000;
 
@@ -372,7 +371,7 @@ export class Ai {
     const a: Answer = { ...base, text: cleanModelText(text), engine: 'gemini', model: j.modelVersion ?? model };
     this.fails = 0;
     this.cache.set(key, { at: this.now, a });
-    if (this.cache.size > CACHE_MAX) this.cache.delete(this.cache.keys().next().value!); // oldest first
+    if (this.cache.size > CACHE_MAX) dropOldest(this.cache);
     return a;
   }
 
@@ -415,7 +414,7 @@ export class Ai {
       v.ground = sensors ? parseSensors(sensors) : null;
     }
     this.airCache.set(key, { at: this.now, v });
-    if (this.airCache.size > AIR_CACHE_MAX) this.airCache.delete(this.airCache.keys().next().value!);
+    if (this.airCache.size > AIR_CACHE_MAX) dropOldest(this.airCache);
     return v;
   }
 
@@ -443,7 +442,7 @@ export class Ai {
       pm25,
       pm10: pm10 ?? v?.pm10 ?? pm25 * 1.6,
       // keep the CPCB 24-hour AQI from the forecast when we have it; otherwise this hour's estimate
-      aqi: v?.aqi.basis === '24h' ? v.aqi : aqiFrom(pm25, pm10, 'hourly')!,
+      aqi: v?.aqi.basis === '24h' ? v.aqi : aqiOf(pm25, pm10, 'hourly'),
       source: v ? 'Google Air Quality API (now) + CAMS forecast' : 'Google Air Quality API',
     };
   }

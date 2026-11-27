@@ -26,17 +26,18 @@ export async function sendSms(to: string, message: string): Promise<boolean> {
   const phone = normalizeIndianPhone(to);
   if (!phone || !smsConfigured()) return false;
   try {
-    if (process.env.SMS_PROVIDER === 'twilio') {
-      const sid = process.env.TWILIO_SID!;
-      const auth = Buffer.from(`${sid}:${process.env.TWILIO_TOKEN}`).toString('base64');
+    const env = process.env;
+    if (env.SMS_PROVIDER === 'twilio') {
+      const sid = env.TWILIO_SID ?? '';
+      const auth = Buffer.from(`${sid}:${env.TWILIO_TOKEN ?? ''}`).toString('base64');
       const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
         method: 'POST',
         headers: { authorization: `Basic ${auth}`, 'content-type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ To: phone, From: process.env.TWILIO_FROM!, Body: message }),
+        body: new URLSearchParams({ To: phone, From: env.TWILIO_FROM ?? '', Body: message }),
       });
       return r.ok;
     }
-    const r = await fetch(process.env.SMS_WEBHOOK_URL!, {
+    const r = await fetch(env.SMS_WEBHOOK_URL ?? '', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ to: phone, message }),

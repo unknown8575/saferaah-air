@@ -26,6 +26,7 @@ import {
   ALPHAS,
   MAX_DETOUR,
   MIN_RISK_GAIN,
+  type AirInput,
   type RouteRequest,
   type RouteResponse,
   type RouteResult,
@@ -47,6 +48,8 @@ interface Job {
 
 /** closer than this, start and destination are one place */
 const SAME_PLACE_M = 25;
+/** PM2.5 breathed on a route (every route carries it when air was asked for). */
+const dose = (k: RouteResult): number => k.air?.doseUg ?? Infinity;
 
 /** Longest a slower route may take and still be shown. */
 const detourLimit = (fastestT: number, extraS = 240) => Math.max(fastestT * MAX_DETOUR, fastestT + extraS);
@@ -185,7 +188,7 @@ export class Router {
     const others = this.othersBesides(ranked, [...swept, ...alts]);
     this.label(ranked, others);
     const routes = [...ranked, ...others];
-    if (req.air) this.addCleanAir(routes, job, fastestT);
+    if (req.air) this.addCleanAir(routes, job, req.air, fastestT);
     return {
       ...base,
       routes,
@@ -300,8 +303,7 @@ export class Router {
   }
 
   /** The lowest-dose path, if it is new, short enough and clearly cleaner than every route shown. */
-  private cleanestPath(routes: RouteResult[], job: Job, fastestT: number): RouteResult | null {
-    const air = job.req.air!;
+  private cleanestPath(routes: RouteResult[], job: Job, air: AirInput, fastestT: number): RouteResult | null {
     const cost = new Float32Array(this.g.m);
     for (let e = 0; e < this.g.m; e++) {
       // ∝ the dose breathed (time × street factor), a little steeper so smoky peaks count;
@@ -311,13 +313,13 @@ export class Router {
     const r = astar(this.g, cost, job.req.mode, job.s, job.t, job.usable);
     if (!r || routes.some((k) => this.overlap(k.edges, r.edges) > 0.85)) return null;
     const d = this.describeIn(job, -1, r);
-    const minDose = Math.min(...routes.map((k) => k.air!.doseUg));
-    return d.timeS <= detourLimit(fastestT, 300) && d.air!.doseUg < minDose * 0.97 ? d : null;
+    const minDose = Math.min(...routes.map(dose));
+    return d.timeS <= detourLimit(fastestT, 300) && dose(d) < minDose * 0.97 ? d : null;
   }
 
   /** Find the lowest-PM2.5 route, score every route's dose and label the cleanest. */
-  private addCleanAir(routes: RouteResult[], job: Job, fastestT: number): void {
-    const clean = this.cleanestPath(routes, job, fastestT);
+  private addCleanAir(routes: RouteResult[], job: Job, air: AirInput, fastestT: number): void {
+    const clean = this.cleanestPath(routes, job, air, fastestT);
     if (clean) {
       // keep at most four routes: a plain alternative makes way for the cleaner one
       if (routes.length >= 4) {
@@ -327,14 +329,16 @@ export class Router {
       if (routes.length < 5) routes.push(clean);
     }
     const fastest = routes.find((k) => k.labels.includes('Fastest')) ?? routes[0];
-    const base = fastest.air!.doseUg;
+    const base = dose(fastest);
+    const fastestAreas = fastest.air?.areas ?? [];
     for (const k of routes) {
-      k.air!.pctVsFastest = base > 0 ? Math.round((1 - k.air!.doseUg / base) * 100) : 0;
-      const mine = new Set(k.air!.areas);
-      k.air!.avoided = fastest.air!.areas.filter((a) => !mine.has(a));
+      if (!k.air) continue;
+      k.air.pctVsFastest = base > 0 ? Math.round((1 - k.air.doseUg / base) * 100) : 0;
+      const mine = new Set(k.air.areas);
+      k.air.avoided = fastestAreas.filter((a) => !mine.has(a));
     }
-    const cleanest = routes.reduce((a, b) => (b.air!.doseUg < a.air!.doseUg ? b : a));
-    if (cleanest !== fastest && cleanest.air!.pctVsFastest >= 3) cleanest.labels.push('Cleanest air');
+    const cleanest = routes.reduce((a, b) => (dose(b) < dose(a) ? b : a));
+    if (cleanest !== fastest && (cleanest.air?.pctVsFastest ?? 0) >= 3) cleanest.labels.push('Cleanest air');
     else fastest.labels.push('Also cleanest');
   }
 

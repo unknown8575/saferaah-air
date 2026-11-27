@@ -243,6 +243,10 @@ export function aqiFrom(pm25: number | null | undefined, pm10?: number | null, b
   const v = Math.round(main === 'PM10' ? b : a);
   return { value: v, band: bandOf(v), main, ...(basis ? { basis } : {}) };
 }
+/** The AQI of a reading whose PM2.5 is a known number (never null; an unusable value reads as 0). */
+export function aqiOf(pm25: number, pm10: number | null | undefined, basis: Aqi['basis']): Aqi {
+  return aqiFrom(pm25, pm10, basis) ?? { value: 0, band: 'good', main: 'PM2.5', ...(basis ? { basis } : {}) };
+}
 export function bandOf(aqi: number): AqiBand {
   for (const b of BAND_ORDER) if (aqi <= AQI_BANDS[b].range[1]) return b;
   return 'severe';
@@ -319,7 +323,7 @@ export function parseOpenMeteo(input: unknown, now: Date = new Date()): AirNow |
     at: hours[i].time,
     pm25: cur.pm25,
     pm10: cur.pm10,
-    aqi: (avg24 ? aqiFrom(avg24.pm25, avg24.pm10, '24h') : aqiFrom(cur.pm25, cur.pm10, 'hourly'))!,
+    aqi: avg24 ? aqiOf(avg24.pm25, avg24.pm10, '24h') : aqiOf(cur.pm25, cur.pm10, 'hourly'),
     avg24,
     hours: hours.slice(i, i + 24),
     source: 'CAMS forecast via Open-Meteo',

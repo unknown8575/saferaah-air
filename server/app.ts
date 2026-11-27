@@ -69,9 +69,12 @@ export function createApp(opts: AppOptions): Server {
 
   async function api(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
     ctx.rateLimit('ip:' + ctx.ip(req));
-    const route = routes.find((r) => r.method === req.method && r.re.test(path));
-    if (!route) throw new HttpError(404, 'No such endpoint');
-    const out = await route.fn(req, path.match(route.re)!);
+    const found = routes
+      .filter((r) => r.method === req.method)
+      .map((r) => ({ fn: r.fn, m: path.match(r.re) }))
+      .find((r) => r.m !== null);
+    if (!found?.m) throw new HttpError(404, 'No such endpoint');
+    const out = await found.fn(req, found.m);
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify(out));
   }

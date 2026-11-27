@@ -3,7 +3,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { LonLat } from '../shared/geo.ts';
 import { DEFAULT_FAMILY, TRAVEL_LABEL, type Family, type Travel } from '../shared/saans/plan.ts';
-import { aqiFrom, smogOf, type AirNow, type Weather, type WeatherHour } from '../shared/air.ts';
+import { aqiOf, smogOf, type AirNow, type Weather, type WeatherHour } from '../shared/air.ts';
 import type { AssistantContext, Turn } from '../shared/saans/assistant.ts';
 import { HttpError } from './http.ts';
 
@@ -148,7 +148,7 @@ export function cleanAir(input: unknown): AirNow | null {
   const pm10 = num(a.pm10, 0, 2000, pm25 * 1.6);
   const avg = cleanAvg(a.avg24);
   // the AQI is recomputed here (never trusted from the client): 24-hour CPCB rule when the averages exist
-  const aqi = (avg && avg.hours >= 16 ? aqiFrom(avg.pm25, avg.pm10, '24h') : aqiFrom(pm25, pm10, 'hourly'))!;
+  const aqi = avg && avg.hours >= 16 ? aqiOf(avg.pm25, avg.pm10, '24h') : aqiOf(pm25, pm10, 'hourly');
   return {
     at: text(a.at, 25),
     pm25,
