@@ -14,12 +14,12 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, the unit/API/UI tests with
 |---|---|---|
 | Unit (`tests/unit`) | vitest | Geometry, router correctness, labels and de-duplication on the real Delhi graph, risk model, journey verification, live reports, CPCB AQI breakpoints, forecast parsing, street air factors, dose maths, clean-air routing, Saans retrieval / plan / answers / prompt, manifest integrity |
 | UI (`tests/ui`) | vitest + happy-dom | The air-first home (one `h1`, 24-hour AQI basis, weather, smog-trap banner, plan steps, buttons), honest empty state, route air lines, the time / safety / air radio group, the route air section and its night trade-off, offline place search (industrial areas, nicknames, de-duplication), on-device settings key, phone normalisation, pre-filled messages |
-| API (`tests/api`) | vitest + real HTTP server | Journeys, privacy deletion, reviews, reports, rate limits, `/api/air`, `/api/assistant` with fake Google services (key mode, Vertex mode, model fallback, quotas, circuit breaker, cache), thinking settings and their fallback, security headers, CSP, path traversal, ETag, constant-time tokens, the persistent daily AI cap, SMS relay limits, production CORS |
+| API (`tests/api`) | vitest + real HTTP server | Journeys, privacy deletion, reviews, reports, rate limits, `/api/air`, `/api/assistant` with fake Google services (key mode, Vertex mode, model fallback, quotas, circuit breaker, cache), thinking settings and their fallback, security headers, CSP, path traversal, ETag, the server building blocks on their own (rate limiters, X-Forwarded-For handling, device id, body limits, static cache rules, input clamping), constant-time tokens, the persistent daily AI cap, SMS relay limits, production CORS |
 | End to end (`tests/e2e`) | Playwright, phone 390×844 and desktop | First run, search, directions, night routing, live navigation with mocked GPS, SOS check-in, offline PWA, accessibility names and 360 px layout, live reports, voice guidance, AQI card, Saans chat, family profile, clean-air routes, air reports, nearby places without coordinates leaving the phone, street air layer, **axe-core WCAG 2.1 AA audit** of the main screens in day and night themes (TC-150) |
 
 ## Coverage (shared/, server/ and the pure UI modules)
 
-166 unit, UI and API tests. Statements ≈ 95 %, branches ≈ 85 %, functions ≈ 96 %, lines ≈ 97 %. Thresholds enforced: 85 / 75 / 85 / 90.
+178 unit, UI and API tests. Statements ≈ 95 %, branches ≈ 85 %, functions ≈ 97 %, lines ≈ 97 %. Thresholds enforced: 85 / 75 / 85 / 90.
 
 ## Conventions
 

@@ -188,13 +188,13 @@ describe('Saans nearby places', () => {
 
 describe('model text', () => {
   it('TC-214 long answers are shortened at a sentence end, never mid-word', async () => {
-    const { clip, cleanModelText } = await import('../../shared/saans/assistant.ts');
+    const m = await import('../../shared/saans/assistant.ts');
     const long = Array.from({ length: 60 }, (_, i) => `Sentence number ${i} says keep the windows shut.`).join(' ');
-    const c = clip(long);
+    const c = m.clip(long);
     expect(c.length).toBeLessThanOrEqual(1600);
     expect(c.endsWith('shut.')).toBe(true);
-    expect(clip('short answer')).toBe('short answer');
-    expect(clip('word '.repeat(500), 100).endsWith('…')).toBe(true);
-    expect(cleanModelText('## Plan\n**Bold** and **open\n* item')).toBe('Plan\nBold and open\n• item');
+    expect(m.clip('short answer')).toBe('short answer');
+    expect(m.clip('word '.repeat(500), 100).endsWith('…')).toBe(true);
+    expect(m.cleanModelText('## Plan\n**Bold** and **open\n* item')).toBe('Plan\nBold and open\n• item');
   });
 });
