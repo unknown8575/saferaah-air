@@ -88,10 +88,10 @@ flowchart LR
 | Criterion | Evidence |
 |---|---|
 | **Problem statement alignment** | §2 table; Saans plan / indoor / swaps with impact; clean-air routes; NAQI; nearby clean-air places. `docs/11-clean-air.md` |
-| **Code quality** | Strict TypeScript everywhere; pure domain modules (`shared/`) separate from UI (`web/src/`) and server (`server/`); UI split into modules — shared app context (`web/src/app.ts`), navigation (`journey.ts`), clean-air views (`airui.ts`), assistant (`saans.ts`); `oxlint` with correctness = error, **0 findings**; CI on every push. |
+| **Code quality** | Strict TypeScript (`strict`, `noUnusedLocals`, `noUnusedParameters`, `noFallthroughCasesInSwitch`) with **no `any`** outside tests; pure domain logic (`shared/`) separate from the UI (`web/src/`) and the server (`server/`); every file under 500 lines and every function under 80 lines with complexity ≤ 20 and nesting ≤ 4, **enforced by `oxlint` in CI** (0 findings); Prettier formatting checked; request bodies typed and validated in one place (`server/validate.ts`); refactors checked for identical output (40 random trips, 300 random plans and answers). See *Project structure* below. |
 | **Security** | Keys only in server env (never in client or repo — Vertex mode needs no key at all); CSP (header + meta), `nosniff`, `DENY` framing, `no-referrer`, Permissions-Policy, HSTS on Cloud Run; strict input clamping on every API field; prompt-injection guard; path-traversal-safe static server; per-phone and per-network rate limits; daily Gemini cap counted in SQLite; SMS relay limits (Indian mobiles only, ≤ 5, a few per trip); constant-time token checks; air API limited to Delhi; checksum-verified data download; `npm audit` in CI; no location stored, no questions logged. [`SECURITY.md`](SECURITY.md) |
 | **Efficiency** | Routing runs on the phone in a Web Worker (server CPU does not grow with routing); the app code is 148 KB (52 KB gzipped), with MapLibre, icons and opening-hours parsing in separate cacheable chunks and the assistant lazy-loaded (35 KB); a versioned service worker caches the shell and the map data separately and deletes old versions on update; precomputed per-street air data (2.6 MB binary); answer cache + embedding cache; in-memory gzip + ETag static cache; AQI and weather cached 30 min per ~10 km cell; Saans with low thinking and short answers; scale-to-zero Cloud Run. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| **Testing** | **166 unit, UI and API tests** (vitest + happy-dom; ~94 % statements / 83 % branches, enforced thresholds) and **27 end-to-end** browser cases (Playwright, phone and desktop), including an automated **WCAG 2.1 AA audit with axe-core** on every main screen in both themes. CI runs all unit/UI/API tests and a browser smoke job with the axe audit on every push. [`docs/TESTING.md`](docs/TESTING.md) |
+| **Testing** | **166 unit, UI and API tests** (vitest + happy-dom; ~95 % statements / 85 % branches, enforced thresholds) and **27 end-to-end** browser cases (Playwright, phone and desktop), including an automated **WCAG 2.1 AA audit with axe-core** on every main screen in both themes. CI runs all unit/UI/API tests and a browser smoke job with the axe audit on every push. [`docs/TESTING.md`](docs/TESTING.md) |
 | **Accessibility** | **axe-core WCAG 2.1 AA audit with zero violations** on home, Saans, routes (day and night), details and menu (TC-150); one `h1` per screen; smog warnings announced as `role=status`; colour contrast ≥ 4.5:1 for text; every control labelled; dialogs with `aria-modal` and focus handling; `aria-live` chat; keyboard and Escape support; radio-group semantics; voice input; spoken turn-by-turn; reduced-motion respected; no horizontal scroll at 360 px (tested); text never relies on colour alone. |
 
 ## 6. Run it
@@ -124,16 +124,33 @@ gcloud run deploy saferaah --source . --region asia-south1 --allow-unauthenticat
 
 Location stays on the phone. The air reading is asked for a ~10 km cell; nearby-place questions send names and distances only; the family profile lives in the phone's storage; Saans conversations live in memory and the server neither logs nor stores them. Journey data for live trip links is deleted when the trip ends. Details: [`docs/10-privacy.md`](docs/10-privacy.md).
 
-## 8. Repository map
+## 8. Project structure
 
 ```
-shared/        domain logic, no I/O — router, air model + NAQI, risk, places, Saans (knowledge, retrieval, plan, assistant)
-server/        Node API: journeys, live reports, /api/air, /api/assistant, Gemini/Vertex client (ai.ts), security headers
-web/src/       PWA: main flow, map, worker (routing off the UI thread), Saans panel, air views
-pipeline/      OpenStreetMap → road graph, per-street air data, places index
-scripts/       fetch-data.mjs (pinned, checksum-verified map data), record_guides.py (help GIFs)
-tests/         unit, UI (happy-dom) and API (vitest); end-to-end (Playwright)
-docs/          architecture, testing, clean-air model, privacy, requirements, test cases
+shared/                 domain logic, no I/O (runs in the browser, the worker and the server)
+  air.ts                  CPCB NAQI (24-h), street air model, Open-Meteo / sensor parsers, smog-trap score
+  router.ts               routing pipeline: safety sweep → alternatives → Pareto front → labels → clean air
+  astar.ts, describe.ts   A* search and road geometry; scoring one route (risk, spots, air dose)
+  risk.ts, places.ts      street risk by hour; safe places and opening hours
+  saans/                  knowledge notes, hybrid retrieval, the day plan, the built-in answer engine
+server/                 Node API (no framework)
+  app.ts                  dispatcher: security headers, CORS, routing to the modules below
+  routes/                 air.ts (health, /api/air, /api/assistant), journeys.ts, reports.ts, reviews.ts
+  validate.ts, http.ts    typed request checks; body reading, rate limiters, CSP
+  ai.ts                   Gemini / Vertex client: model fallback, low thinking, finished answers only, caps
+web/src/                PWA
+  main.ts                 boot: load data, start the worker and the map, timers
+  home.ts, airui.ts       the air-first home and the air views
+  searchbar.ts, directions.ts, routes-panel.ts, details.ts   search → directions → routes → details
+  journey.ts, journey-view.ts, sos.ts, arrived.ts            navigation, check-ins and SOS, arrival
+  saans.ts, family-form.ts, voice.ts                          the assistant panel
+  map.ts, basemap.ts, map-style.json                          MapLibre map, base style and overlays
+  worker.ts, worker-api.ts                                    routing off the UI thread, typed messages
+  styles/                 one CSS file per part of the screen
+pipeline/               OpenStreetMap → road graph, per-street air data, places and search index
+scripts/                fetch-data.mjs (pinned, checksum-verified map data), record_guides.py (help GIFs)
+tests/                  unit, UI (happy-dom) and API (vitest); end-to-end (Playwright, axe-core)
+docs/                   architecture, testing, clean-air model, privacy, requirements, test cases
 ```
 
 The map data (57 MB, OpenStreetMap ODbL) is generated by `pipeline/` from OpenStreetMap and is too large for this repository's 10 MB limit, so it is not stored here: `data-manifest.json` pins every file by SHA-256 to a fixed commit and `npm run build` fetches and verifies it (set `DATA_BASE_URL` to use a mirror).

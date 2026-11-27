@@ -43,7 +43,7 @@ flowchart TB
 * **Horizontal:** Cloud Run adds instances automatically behind the Google Front End load balancer and scales to zero when idle. The stateless endpoints (static, `/api/air`, `/api/assistant`, `/api/health`) can run on any number of instances today.
 * **Why `--max-instances 1` for now:** journeys (live trip links, SOS) and live reports live in SQLite on the instance. With two instances a family member could poll an instance that never saw the trip. Until that state moves to a shared store, one instance with high concurrency is the correct, consistent choice.
 * **Path to many instances** (no change to the client or the domain code):
-  1. journeys, reports, votes → Firestore or Cloud SQL (the SQL is already isolated in `server/app.ts` / `server/db.ts`);
+  1. journeys, reports, votes → Firestore or Cloud SQL (the SQL is already isolated in `server/routes/*` / `server/db.ts`);
   2. rate limits and the answer cache → Memorystore (Redis), so limits hold across instances;
   3. then raise `--max-instances`; the load balancer spreads traffic, and `/api/health` serves as the readiness check.
 
@@ -67,7 +67,11 @@ flowchart TB
 
 ## Module boundaries
 
-* `shared/` — pure domain logic, no I/O, used by the worker, the server and the tests.
-* `server/` — HTTP, storage, Google clients; depends on `shared/` only.
-* `web/src/` — UI; views (`airui.ts`, `saans.ts`) are pure renderers fed by `main.ts`.
+* `shared/` — pure domain logic, no I/O, used by the worker, the server and the tests. The router is a pipeline of small steps (`router.ts`) over an A* module (`astar.ts`) and a route scorer (`describe.ts`).
+* `server/` — HTTP, storage, Google clients; depends on `shared/` only. `app.ts` only dispatches; each group of endpoints is a module in `server/routes/`, every request body is checked in `validate.ts` (bodies arrive as `unknown`), limits and headers live in `http.ts`.
+* `web/src/` — UI, one module per screen (home, search bar, directions, routes, details, journey, Saans…) sharing one typed state object (`S` in `app.ts`); views such as `airui.ts` are pure renderers with unit tests. The page and the routing worker talk through typed messages (`worker-api.ts`).
 * `pipeline/` — offline data build from OpenStreetMap.
+
+### Enforced limits
+
+`oxlint` fails CI on any file over 500 lines, any function over 80 lines, cyclomatic complexity over 20, nesting deeper than 4, more than 8 parameters, or an explicit `any` (tests excepted for the size rules). TypeScript runs with `strict`, `noUnusedLocals`, `noUnusedParameters` and `noFallthroughCasesInSwitch`; Prettier formatting is checked.
