@@ -217,6 +217,7 @@ export function cleanModelText(s: string): string {
   return s
     .replace(/^#+\s*/gm, '')
     .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*\*/g, '') // an unpaired bold marker
     .replace(/^\s*\*\s+/gm, '• ')
     .replace(/^\s*-\s+/gm, '• ')
     .replace(/\n{3,}/g, '\n\n')

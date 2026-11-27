@@ -84,8 +84,11 @@ const MODEL_CANDIDATES = [
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
 ];
-/** Answers are 2–6 short lines; a small cap keeps them short and the reply fast. */
-const MAX_OUTPUT_TOKENS = 700;
+/**
+ * Gemini counts its thinking tokens against this limit too, so it must leave room for both.
+ * Answer length is kept short by the instruction (≤ 140 words), not by this cap.
+ */
+const MAX_OUTPUT_TOKENS = 2048;
 
 /**
  * Saans answers from facts computed in code, so deep reasoning adds seconds, not accuracy:
@@ -320,11 +323,20 @@ export class Ai {
         generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0.4 },
         safetySettings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }],
       });
-      const text = (j.candidates?.[0]?.content?.parts ?? [])
-        .filter((x: any) => !x.thought)
-        .map((x: any) => x.text ?? '')
+      const cand = j.candidates?.[0];
+      const parts: any[] = cand?.content?.parts ?? [];
+      const text = parts
+        .filter((x) => !x.thought && typeof x.text === 'string')
+        .map((x) => x.text)
         .join('')
         .trim();
+      // only a finished answer is shown: one cut off by the token limit, or stopped for safety or
+      // recitation, gives the built-in answer instead and is never cached
+      const finish: string = cand?.finishReason ?? 'STOP';
+      if (finish !== 'STOP') {
+        console.warn(`[saans] ${model} stopped with ${finish} after ${text.length} chars; using built-in answer`);
+        return { ...base, fallback: true, reason: finish === 'MAX_TOKENS' ? 'answer was cut off' : 'answer withheld' };
+      }
       if (!text) throw new Error('empty answer');
       const a: Answer = { ...base, text: cleanModelText(text), engine: 'gemini', model: j.modelVersion ?? model };
       this.fails = 0;

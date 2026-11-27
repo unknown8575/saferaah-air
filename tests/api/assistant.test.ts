@@ -286,8 +286,8 @@ describe('Saans API', () => {
       if (url.includes(':generateContent')) {
         expect(init.headers.authorization).toBe('Bearer tok-1');
         const cfg = JSON.parse(init.body).generationConfig;
-        // short answers, low thinking: Saans should reply in a couple of seconds
-        expect(cfg.maxOutputTokens).toBeLessThanOrEqual(800);
+        // low thinking for speed, and room for the thinking tokens as well as the answer
+        expect(cfg.maxOutputTokens).toBeGreaterThanOrEqual(2048);
         expect(cfg.thinkingConfig).toEqual({ thinkingLevel: 'low' });
         return json({
           candidates: [
@@ -382,5 +382,51 @@ describe('Saans API', () => {
     expect(thinkingFor('gemini-2.5-flash-lite')).toEqual({ thinkingBudget: 0 });
     expect(thinkingFor('gemini-3.5-flash')).toEqual({ thinkingLevel: 'low' });
     expect(thinkingFor('gemini-pro-latest')).toBeUndefined();
+  });
+  it('TC-209 an answer cut off by the token limit is never shown or cached; the built-in answer is used', async () => {
+    let n = 0;
+    const replies = [
+      {
+        candidates: [
+          {
+            finishReason: 'MAX_TOKENS',
+            content: { parts: [{ text: "With Delhi's AQI at 310, plan your family's day to keep your" }] },
+          },
+        ],
+      },
+      { candidates: [{ finishReason: 'SAFETY', content: { parts: [] } }] },
+      {
+        candidates: [
+          {
+            finishReason: 'STOP',
+            content: {
+              parts: [
+                { text: 'planning…', thought: true },
+                { text: '**Subah (avoid):** ' },
+                { text: 'Subah 5–9 baje bahar mat jaiye.' },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const kf = (async (url: string) =>
+      url.includes(':generateContent')
+        ? new Response(JSON.stringify(replies[Math.min(n++, 2)]))
+        : new Response('{}', { status: 404 })) as Fetch;
+    const ai = new Ai({ geminiKey: 'k', model: 'gemini-3.5-flash', fetch: kf });
+    const noFamily = { air: null, family: null, route: null };
+    const cut = await ai.answer('Plan my family day today', noFamily);
+    expect(cut.engine).toBe('saans');
+    expect(cut.fallback).toBe(true);
+    expect(cut.reason).toBe('answer was cut off');
+    expect(cut.text).not.toContain('to keep your');
+    expect(cut.text.length).toBeGreaterThan(40);
+    const withheld = await ai.answer('Plan my family day today', noFamily); // not served from cache
+    expect(withheld.reason).toBe('answer withheld');
+    const ok = await ai.answer('Plan my family day today', noFamily); // and the breaker did not trip
+    expect(ok.engine).toBe('gemini');
+    expect(ok.text).toBe('Subah (avoid): Subah 5–9 baje bahar mat jaiye.');
+    expect(n).toBe(3);
   });
 });
