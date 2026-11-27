@@ -5,7 +5,9 @@ import { icon, placeIcon } from './icons.ts';
 import { save } from './store.ts';
 import { MODE_INFO, MODES, type Mode } from '../../shared/modes.ts';
 import { istTime } from '../../shared/time.ts';
-import { type LonLat } from '../../shared/geo.ts';
+import { haversine, type LonLat } from '../../shared/geo.ts';
+import { defaultMode } from '../../shared/advice.ts';
+import { namesLead } from '../../shared/kinds.ts';
 import type { Profile } from '../../shared/risk.ts';
 import { S, fromLonLat, myLonLat, search, setView, smap, top, type Place } from './app.ts';
 import { browsePlace, intentFor, intentRows } from './nearby.ts';
@@ -14,7 +16,7 @@ import { goHome } from './home.ts';
 import { applyTheme, timeToday } from './theme.ts';
 import { startPick } from './pick.ts';
 import { refreshPois, showPlace } from './place.ts';
-import { planRoutes } from './routes-panel.ts';
+import { focusRoutesWhenReady, planRoutes } from './routes-panel.ts';
 import { typeLabel } from './searchbar.ts';
 
 // ---------- directions ----------
@@ -52,6 +54,15 @@ export const offersMe = (q: string): boolean => {
 function endSuggestions(which: End, q: string, done: (then: () => void) => () => void, rerender: () => void) {
   const near = fromLonLat() ?? [77.215, 28.6];
   const hits = search.query(q, intentFor(q) ? 4 : 7, near as [number, number]);
+  const lead = namesLead(q, hits[0]?.name);
+  const byName = hits.map((x) =>
+    row(
+      done(() => chooseEnd(which, x)),
+      h('span', { class: 'sic' }, icon(placeIcon(x.type), 18)),
+      h('span', null, x.name),
+      h('small', null, typeLabel(x.type)),
+    ),
+  );
   const items: HTMLElement[] = [
     offersMe(q)
       ? row(
@@ -61,16 +72,10 @@ function endSuggestions(which: End, q: string, done: (then: () => void) => () =>
           !myLonLat() ? h('small', null, 'not found yet') : null,
         )
       : null,
-    // "gym": the nearest gyms (or similar) to the other end of the trip
+    // "Khan Market": that place first; "gym": the nearest gyms (or similar) to the other end of the trip
+    ...(lead ? byName : []),
     ...intentRows(q, near as LonLat, (p) => done(() => setEnd(which, browsePlace(p)))(), null, rerender),
-    ...hits.map((x) =>
-      row(
-        done(() => chooseEnd(which, x)),
-        h('span', { class: 'sic' }, icon(placeIcon(x.type), 18)),
-        h('span', null, x.name),
-        h('small', null, typeLabel(x.type)),
-      ),
-    ),
+    ...(lead ? [] : byName),
     row(
       done(() => chooseEnd(which, 'map')),
       h('span', { class: 'sic' }, icon('pin', 18)),
@@ -117,7 +122,11 @@ export function placeField(which: End): HTMLElement {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       // the best match is always first: "Your location" only leads while it is what is typed
-      list.querySelector<HTMLElement>('li[role=option]')?.click();
+      const first = list.querySelector<HTMLElement>('li[role=option]');
+      if (first) {
+        keyboardPick = which;
+        first.click();
+      }
     }
     if (e.key === 'Escape') list.hidden = true;
   });
@@ -161,8 +170,12 @@ function whoSelect(): HTMLSelectElement {
 /** One tab per travel mode, each with its fastest time. */
 function modeTabs(): HTMLElement {
   const pick = (m: Mode) => () => {
-    if (m === S.settings.mode) return;
-    S.settings = save({ mode: m });
+    // tapping the mode already shown keeps it for the next trips too
+    if (m === S.settings.mode) {
+      S.settings = save({ mode: m, modePicked: true });
+      return;
+    }
+    S.settings = save({ mode: m, modePicked: true });
     S.userPicked = false;
     openDirections();
   };
@@ -213,6 +226,7 @@ export function renderDirectionsTop() {
     h(
       'div',
       { class: 'dir-panel' },
+      h('h1', { class: 'sr-only' }, S.to ? `Directions to ${S.to.label}` : 'Directions'),
       h(
         'div',
         { class: 'dir-fields' },
@@ -228,6 +242,7 @@ export function renderDirectionsTop() {
       departureOptions(),
     ),
   );
+  moveFocusOn();
 }
 
 export function swapEnds() {
@@ -244,8 +259,29 @@ export function isoClock(d: Date): string {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
+/** The field a keyboard user just filled with Enter: focus moves on to what comes next. */
+let keyboardPick: End | null = null;
+function moveFocusOn(): void {
+  const which = keyboardPick;
+  keyboardPick = null;
+  if (!which) return;
+  const next = which === 'to' ? (fromLonLat() ? null : 'f-from') : S.to ? null : 'f-to';
+  if (next) document.getElementById(next)?.focus();
+  else focusRoutesWhenReady();
+}
+
+/** Until the user picks a mode, a long trip opens on an auto and a short one on foot (not saved). */
+function applyDefaultMode(): void {
+  const from = fromLonLat();
+  const to = S.to?.lonlat;
+  if (S.settings.modePicked || !from || !to) return;
+  const mode = defaultMode(haversine(from[0], from[1], to[0], to[1]));
+  if (mode !== S.settings.mode) S.settings = { ...S.settings, mode };
+}
+
 export function openDirections() {
   if (S.view !== 'directions') setView('directions');
+  applyDefaultMode();
   smap.setPlacePin();
   smap.setHits([]);
   renderDirectionsTop();

@@ -8,6 +8,7 @@ import type { Mode } from '../../shared/modes.ts';
 import type { Precautions } from '../../shared/precautions.ts';
 import type { LiveReport } from '../../shared/live.ts';
 import type { LonLat } from '../../shared/geo.ts';
+import type { AqiBand } from '../../shared/air.ts';
 
 export type WorkerRoute = Omit<RouteResult, 'edges'> & {
   edges: number[];
@@ -23,6 +24,8 @@ export interface RouteReply {
   note?: string;
   error?: string;
   advice: Advice | null;
+  /** a warning when the trip means a long time in bad air (shown above the safety advice) */
+  airAdvice: Advice | null;
   computeMs: number;
   snapped: { from: LonLat; to: LonLat };
 }
@@ -63,6 +66,9 @@ export type WorkerRequest =
       pm25?: number | null;
       /** trusted contacts who get the arrival message (advice wording depends on it) */
       contacts?: number;
+      /** the air now, for the "long time in bad air" warning */
+      aqi?: { value: number; band: AqiBand } | null;
+      smogTrapped?: boolean;
     }
   | { type: 'reports'; reports: LiveReport[]; now?: number }
   | { type: 'modeTimes'; from: LonLat; to: LonLat; when: string; profile: Profile }

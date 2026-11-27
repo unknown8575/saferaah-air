@@ -13,6 +13,8 @@ export interface Contact {
 export interface Settings {
   profile: Profile;
   mode: Mode;
+  /** the user chose a travel mode (otherwise long trips open on an auto, short ones on foot) */
+  modePicked?: boolean;
   contacts: Contact[];
   travellerName: string;
   simulate: boolean;

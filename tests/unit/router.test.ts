@@ -3,7 +3,7 @@ import { Router, ALPHAS, MAX_DETOUR, tierOf } from '../../shared/router.ts';
 import { Graph, encodeGraph } from '../../shared/graph.ts';
 import { computeRisk } from '../../shared/risk.ts';
 import { buildSteps } from '../../shared/steps.ts';
-import { adviseTrip } from '../../shared/advice.ts';
+import { LONG_WALK_M, adviseAir, adviseTrip, defaultMode } from '../../shared/advice.ts';
 import { ROAD_CLASSES, RC, F_FOOT, F_VEHICLE, F_ONEWAY, type Mode } from '../../shared/modes.ts';
 import { delhi, ist, TRIPS } from '../helpers.ts';
 
@@ -215,6 +215,40 @@ describe('tiered routes (FR-3, FR-4)', () => {
     expect(withOne?.body).toContain('We will tell your contacts when you arrive.');
     const ok = adviseTrip({ mode: 'walk', profile: 'general', when: ist('12:00'), routes, contacts: 0 });
     expect(ok?.body).not.toContain('arrival message to your contacts');
+  });
+
+  it('TC-30c a long time in bad air on an open mode gets an air warning that suggests a closed car', () => {
+    const vp = { value: 336, band: 'verypoor' as const };
+    const walk = adviseAir({
+      mode: 'walk',
+      timeS: 9240,
+      aqi: vp,
+      smogTrapped: true,
+      vehicleAlt: { mode: 'auto', timeS: 1500 },
+    });
+    expect(walk?.level).toBe('warn');
+    expect(walk?.title).toBe('Very poor air (AQI 336): 2 h 34 min on foot');
+    expect(walk?.body).toContain('Smog is trapped');
+    expect(walk?.body).toContain('By auto it takes about 25 min');
+    expect(walk?.body).toContain('N95');
+    expect(walk?.suggestMode).toBe('car');
+    // thresholds: poor 30 min (caution), very poor 15 min, severe 10 min
+    expect(adviseAir({ mode: 'auto', timeS: 29 * 60, aqi: { value: 250, band: 'poor' } })).toBeNull();
+    expect(adviseAir({ mode: 'auto', timeS: 31 * 60, aqi: { value: 250, band: 'poor' } })?.level).toBe('caution');
+    expect(adviseAir({ mode: 'twowheeler', timeS: 14 * 60, aqi: vp })).toBeNull();
+    expect(adviseAir({ mode: 'twowheeler', timeS: 11 * 60, aqi: { value: 420, band: 'severe' } })?.title).toContain(
+      'on a two-wheeler',
+    );
+    // a closed car, clean air or no reading: no air warning
+    expect(adviseAir({ mode: 'car', timeS: 9000, aqi: vp })).toBeNull();
+    expect(adviseAir({ mode: 'walk', timeS: 9000, aqi: { value: 150, band: 'moderate' } })).toBeNull();
+    expect(adviseAir({ mode: 'walk', timeS: 9000, aqi: null })).toBeNull();
+  });
+
+  it('TC-30d with no mode picked, long trips open on an auto and short ones on foot', () => {
+    expect(defaultMode(800)).toBe('walk');
+    expect(defaultMode(LONG_WALK_M)).toBe('walk');
+    expect(defaultMode(LONG_WALK_M + 1)).toBe('auto');
   });
 
   it('TC-31 turn-by-turn steps cover the route', () => {

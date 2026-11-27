@@ -10,6 +10,7 @@ import { airLine, priorityPicker } from './airui.ts';
 import type { RouteSummary } from '../../shared/saans/assistant.ts';
 import { S, clockText, fromLonLat, inCoverage, now, rpc, sheet, smap, toast, top, fitPad } from './app.ts';
 import { startJourney } from './journey.ts';
+import { notifyPhones } from './messages.ts';
 import { showDetails, tierBadge } from './details.ts';
 import { openDirections } from './directions.ts';
 import { applyTheme } from './theme.ts';
@@ -101,6 +102,24 @@ function keepSelection(reply: RouteReply): void {
 
 const onRoutesScreen = () => S.view === 'directions' || S.view === 'details';
 
+/** The worker's route request: the trip, plus the air now and the contacts (both shape the advice). */
+function routeRequest(from: LonLat, to: LonLat, when: string) {
+  const air = S.air;
+  const smog = air?.weather?.smog.level;
+  return {
+    type: 'route' as const,
+    from,
+    to,
+    mode: S.settings.mode,
+    when,
+    profile: S.settings.profile,
+    pm25: air?.pm25 ?? null,
+    contacts: notifyPhones(S.settings.contacts).length,
+    aqi: air ? { value: air.aqi.value, band: air.aqi.band } : null,
+    smogTrapped: smog === 'high' || smog === 'severe',
+  };
+}
+
 export async function planRoutes(opts: { quiet?: boolean } = {}) {
   const from = fromLonLat();
   const to = S.to?.lonlat;
@@ -114,9 +133,7 @@ export async function planRoutes(opts: { quiet?: boolean } = {}) {
   fetchModeTimes(from, to, when, seq);
   let reply: RouteReply;
   try {
-    const req = { type: 'route' as const, from, to, mode: S.settings.mode, when, profile: S.settings.profile };
-    const contacts = S.settings.contacts.filter((c) => c.notify).length;
-    reply = (await rpc<{ reply: RouteReply }>({ ...req, pm25: S.air?.pm25 ?? null, contacts })).reply;
+    reply = (await rpc<{ reply: RouteReply }>(routeRequest(from, to, when))).reply;
   } catch (err) {
     if (seq !== planSeq) return;
     S.reply = null;
@@ -159,8 +176,10 @@ export function selectRoute(i: number, fromMap = false) {
 /** "Walking is risky now: take an auto" and the like, with a button to switch mode. */
 function adviceBox(adv: RouteReply['advice']): HTMLElement | null {
   if (!adv || adv.level === 'ok') return null;
+  const mode = adv.suggestMode;
   const switchMode = () => {
-    S.settings = save({ mode: adv.suggestMode! });
+    if (!mode) return;
+    S.settings = save({ mode, modePicked: true });
     S.userPicked = false;
     openDirections();
   };
@@ -169,11 +188,11 @@ function adviceBox(adv: RouteReply['advice']): HTMLElement | null {
     { class: `advice advice-${adv.level}` },
     h('strong', null, adv.title),
     h('p', null, adv.body),
-    adv.suggestMode
+    mode
       ? h(
           'button',
           { class: 'btn small', on: { click: switchMode } },
-          `Show ${MODE_INFO[adv.suggestMode].label.toLowerCase()} routes`,
+          `Show ${MODE_INFO[mode].label.toLowerCase()} routes`,
         )
       : null,
   );
@@ -257,14 +276,22 @@ function routeNotes(R: RouteReply): (HTMLElement | null)[] {
   ];
 }
 
+/** A keyboard user picked the trip with Enter: the selected route card takes focus when it is drawn. */
+let focusRoutes = false;
+export function focusRoutesWhenReady(): void {
+  focusRoutes = true;
+}
+
 export function renderRoutes() {
-  const R = S.reply!;
+  const R = S.reply;
+  if (!R) return;
   smap.showRoutes(R.routes, S.selected, { callouts: true, onSelect: (i) => selectRoute(i, true) });
   const n = R.routes.length;
   clear(
     sheet,
     h('div', { class: 'grip' }),
     R.error ? h('div', { class: 'pad' }, h('p', { class: 'error' }, R.error)) : null,
+    adviceBox(R.airAdvice),
     adviceBox(R.advice),
     n
       ? h(
@@ -290,6 +317,10 @@ export function renderRoutes() {
         )
       : null,
   );
+  if (focusRoutes) {
+    focusRoutes = false;
+    sheet.querySelector<HTMLElement>('.route-card.sel')?.focus();
+  }
 }
 
 /** What Saans needs to know about the selected route. */

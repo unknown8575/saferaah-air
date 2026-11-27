@@ -6,6 +6,7 @@ import { MODE_INFO } from './modes.ts';
 import type { Profile } from './risk.ts';
 import type { RouteResult, Tier } from './router.ts';
 import { istTime } from './time.ts';
+import { AQI_BANDS, type AqiBand } from './air.ts';
 
 export interface Advice {
   level: 'ok' | 'caution' | 'warn';
@@ -90,5 +91,61 @@ export function adviseTrip(opts: {
     body: arrival
       ? 'We will still send an arrival message to your contacts when you reach.'
       : 'Enjoy the trip; add a trusted contact if you want someone told when you reach.',
+  };
+}
+
+// ---------------------------------------------------------------- air on the way
+
+/** Straight-line trips longer than this open on an auto, not a walk, unless the user picked a mode. */
+export const LONG_WALK_M = 3000;
+
+/** The travel mode a trip opens with when the user has not chosen one. */
+export function defaultMode(distM: number): Mode {
+  return distM > LONG_WALK_M ? 'auto' : 'walk';
+}
+
+/** Minutes in the open past which each AQI band gets a warning on the routes screen. */
+const AIR_LIMIT_MIN: Partial<Record<AqiBand, number>> = { poor: 30, verypoor: 15, severe: 10 };
+const OPEN_AIR: Partial<Record<Mode, string>> = {
+  walk: 'on foot',
+  twowheeler: 'on a two-wheeler',
+  auto: 'in an open auto',
+};
+
+function duration(s: number): string {
+  const m = Math.max(1, Math.round(s / 60));
+  if (m < 60) return `${m} min`;
+  return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
+}
+
+/**
+ * A warning when the trip means breathing bad air for a long time: poor air for 30+ min,
+ * very poor for 15+ min or severe for 10+ min in an open mode (walk, two-wheeler, auto).
+ * It names the time in the air, says when smog is trapped, and suggests a closed car or cab.
+ */
+export function adviseAir(o: {
+  mode: Mode;
+  /** the quickest route's time, s */
+  timeS: number;
+  aqi: { value: number; band: AqiBand } | null;
+  smogTrapped?: boolean;
+  /** an auto over the same trip, when walking */
+  vehicleAlt?: { mode: Mode; timeS: number };
+}): Advice | null {
+  const how = OPEN_AIR[o.mode];
+  const limit = o.aqi ? AIR_LIMIT_MIN[o.aqi.band] : undefined;
+  if (!o.aqi || !how || limit === undefined || o.timeS < limit * 60) return null;
+  const alt =
+    o.vehicleAlt && o.vehicleAlt.timeS < o.timeS
+      ? `By ${MODE_INFO[o.vehicleAlt.mode].label.toLowerCase()} it takes about ${duration(o.vehicleAlt.timeS)}, far less time in this air. `
+      : '';
+  return {
+    level: o.aqi.band === 'poor' ? 'caution' : 'warn',
+    title: `${AQI_BANDS[o.aqi.band].label} air (AQI ${o.aqi.value}): ${duration(o.timeS)} ${how}`,
+    body:
+      (o.smogTrapped ? 'Smog is trapped near the ground right now, so it will not clear on the way. ' : '') +
+      alt +
+      'A closed car or cab, or the metro, keeps most of it out. If you go this way, wear a well-fitted N95 and pick the cleanest-air route.',
+    suggestMode: 'car',
   };
 }

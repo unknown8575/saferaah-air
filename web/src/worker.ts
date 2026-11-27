@@ -5,7 +5,7 @@ import { Router, tierOf, type RouteResult } from '../../shared/router.ts';
 import { computeRisk, type CrowdStat, type Profile, type RiskField } from '../../shared/risk.ts';
 import { isOpenAt, CAT_INFO, type Poi } from '../../shared/places.ts';
 import { buildSteps } from '../../shared/steps.ts';
-import { adviseTrip } from '../../shared/advice.ts';
+import { adviseAir, adviseTrip } from '../../shared/advice.ts';
 import { MODES, type Mode } from '../../shared/modes.ts';
 import { routePrecautions } from '../../shared/precautions.ts';
 import { liveEdgeDeltas, airEdgeDeltas } from '../../shared/live.ts';
@@ -125,6 +125,15 @@ function routes(m: Extract<WorkerRequest, { type: 'route' }>): RouteReply {
       vehicleAltS: vehicleAlt,
       contacts: m.contacts,
     }),
+    airAdvice: res.routes.length
+      ? adviseAir({
+          mode: m.mode,
+          timeS: Math.min(...res.routes.map((r) => r.timeS)),
+          aqi: m.aqi ?? null,
+          smogTrapped: m.smogTrapped,
+          vehicleAlt: vehicleAlt && { mode: vehicleAlt.mode, timeS: vehicleAlt.fastestS ?? vehicleAlt.timeS },
+        })
+      : null,
     snapped: {
       from: res.from ? [res.from.lon, res.from.lat] : m.from,
       to: res.to ? [res.to.lon, res.to.lat] : m.to,

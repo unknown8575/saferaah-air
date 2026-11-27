@@ -153,7 +153,7 @@ function applyUrlParams(): void {
   const t = params.get('t');
   if (t && /^\d{1,2}:\d{2}$/.test(t)) S.leaveAt = timeToday(t);
   const md = params.get('mode') as Mode | null;
-  if (md && MODES.includes(md)) save({ mode: md });
+  if (md && MODES.includes(md)) save({ mode: md, modePicked: true });
   const pr = params.get('who') as Profile | null;
   if (pr && ['woman', 'child', 'general'].includes(pr)) save({ profile: pr });
   S.settings = load();
