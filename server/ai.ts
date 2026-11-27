@@ -65,6 +65,34 @@ export function aiConfigFromEnv(): AiConfig {
   };
 }
 
+/** The parts of a Gemini / Vertex response this client reads. */
+interface GeminiResponse {
+  candidates?: { finishReason?: string; content?: { parts?: { text?: string; thought?: boolean }[] } }[];
+  modelVersion?: string;
+  error?: { message?: string };
+  embeddings?: { values: number[] }[];
+  predictions?: { embeddings?: { values: number[] } }[];
+}
+/** Google Air Quality "current conditions" (only what we use). */
+interface GoogleAirResponse {
+  dateTime?: string;
+  pollutants?: { code: string; concentration?: { value?: number } }[];
+}
+type GenerateBody = { generationConfig?: Record<string, unknown> } & Record<string, unknown>;
+type Reply = Answer & { fallback?: boolean; reason?: string; cached?: boolean };
+const statusOf = (err: unknown): number | undefined => (err as { status?: number }).status;
+
+/** The visible answer text and why the model stopped. */
+export function readCandidate(j: GeminiResponse): { text: string; finish: string } {
+  const cand = j.candidates?.[0];
+  const text = (cand?.content?.parts ?? [])
+    .filter((x) => !x.thought && typeof x.text === 'string')
+    .map((x) => x.text)
+    .join('')
+    .trim();
+  return { text, finish: cand?.finishReason ?? 'STOP' };
+}
+
 async function withTimeout<T>(ms: number, f: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
@@ -176,7 +204,13 @@ export class Ai {
   }
 
   /** POST to Gemini. `op` is e.g. "gemini-x:generateContent". */
-  private async call(model: string, op: string, body: unknown, ms = 25000, location = 'global'): Promise<any> {
+  private async call(
+    model: string,
+    op: string,
+    body: unknown,
+    ms = 25000,
+    location = 'global',
+  ): Promise<GeminiResponse> {
     return withTimeout(ms, async (signal) => {
       let url: string, headers: Record<string, string>;
       if (this.mode === 'key') {
@@ -189,7 +223,7 @@ export class Ai {
         headers = { 'content-type': 'application/json', authorization: `Bearer ${a.token}` };
       }
       const r = await this.f(url, { method: 'POST', signal, headers, body: JSON.stringify(body) });
-      const j = await r.json().catch(() => ({}));
+      const j = (await r.json().catch(() => ({}))) as GeminiResponse;
       if (!r.ok)
         throw Object.assign(new Error(`Gemini ${r.status}: ${j?.error?.message ?? 'error'}`), { status: r.status });
       return j;
@@ -216,7 +250,7 @@ export class Ai {
         },
         ms,
       );
-      return (j.embeddings ?? []).map((e: any) => e.values as number[]);
+      return (j.embeddings ?? []).map((e) => e.values);
     }
     const j = await this.call(
       this.embedModel,
@@ -227,7 +261,7 @@ export class Ai {
       ms,
       'us-central1',
     );
-    return (j.predictions ?? []).map((p: any) => p?.embeddings?.values as number[]);
+    return (j.predictions ?? []).map((p) => p?.embeddings?.values ?? []);
   }
 
   /** Embeddings of every note, computed once (vector search); retried later if it failed. */
@@ -259,36 +293,38 @@ export class Ai {
     }
   }
 
+  /**
+   * generateContent on one model: low thinking when it takes it (a 400 means it does not, so ask
+   * again without and remember), and one retry after a short wait when the quota is busy (429).
+   */
+  private async generateOn(m: string, body: GenerateBody): Promise<GeminiResponse> {
+    const think = this.noThinking.has(m) ? undefined : thinkingFor(m);
+    const withThink = think ? { ...body, generationConfig: { ...body.generationConfig, thinkingConfig: think } } : body;
+    try {
+      return await this.call(m, 'generateContent', withThink);
+    } catch (err) {
+      if (statusOf(err) === 400 && think) {
+        this.noThinking.add(m);
+        return this.call(m, 'generateContent', body);
+      }
+      if (statusOf(err) !== 429) throw err;
+      await new Promise((r) => setTimeout(r, 1500));
+      return this.call(m, 'generateContent', withThink);
+    }
+  }
+
   /** generateContent on the first model that exists; remembers it. */
-  private async generate(
-    body: { generationConfig?: Record<string, unknown> } & Record<string, unknown>,
-  ): Promise<{ j: any; model: string }> {
+  private async generate(body: GenerateBody): Promise<{ j: GeminiResponse; model: string }> {
     let last: unknown;
     const order = this.models.slice(); // the list is re-ordered inside the loop
     for (const m of order) {
-      const think = this.noThinking.has(m) ? undefined : thinkingFor(m);
-      const forModel = (t: Record<string, unknown> | undefined) =>
-        t ? { ...body, generationConfig: { ...body.generationConfig, thinkingConfig: t } } : body;
       try {
-        try {
-          return { j: await this.call(m, 'generateContent', forModel(think)), model: m };
-        } catch (err) {
-          const st = (err as { status?: number }).status;
-          if (st === 400 && think) {
-            // this model does not take that thinking setting: remember, and ask again without it
-            this.noThinking.add(m);
-            return { j: await this.call(m, 'generateContent', body), model: m };
-          }
-          // a new project's per-minute quota is small: wait a moment and try once more
-          if (st !== 429) throw err;
-          await new Promise((r) => setTimeout(r, 1500));
-          return { j: await this.call(m, 'generateContent', forModel(think)), model: m };
-        }
+        return { j: await this.generateOn(m, body), model: m };
       } catch (err) {
         last = err;
         // an unknown or retired model (404), or one this billing account may not use (403),
         // moves on to the next name; anything else is a real error
-        const st = (err as { status?: number }).status;
+        const st = statusOf(err);
         if (st !== 404 && st !== 403) throw err;
         console.warn(`[saans] model ${m} not available (${st}), trying the next one`);
         this.models = this.models.filter((x) => x !== m).concat(m);
@@ -298,11 +334,7 @@ export class Ai {
   }
 
   /** Answer a question: Gemini grounded on our facts and notes, or the built-in engine. */
-  async answer(
-    q: string,
-    ctx: AssistantContext,
-    history: Turn[] = [],
-  ): Promise<Answer & { fallback?: boolean; reason?: string; cached?: boolean }> {
+  async answer(q: string, ctx: AssistantContext, history: Turn[] = []): Promise<Reply> {
     if (this.hasGemini && this.now < this.openUntil)
       return { ...compose(q, ctx), fallback: true, reason: 'Gemini paused after errors' };
     const key = createHash('sha256')
@@ -311,47 +343,47 @@ export class Ai {
     const hit = this.cache.get(key);
     if (hit && this.now - hit.at < CACHE_MS) return { ...hit.a, cached: true };
     const useGemini = this.hasGemini && this.takeQuota();
-    const dense = useGemini ? await this.dense(q) : undefined;
-    const notes = groundingNotes(q, dense);
+    const notes = groundingNotes(q, useGemini ? await this.dense(q) : undefined);
     const base = compose(q, ctx, notes);
     if (!useGemini) return this.hasGemini ? { ...base, fallback: true, reason: 'daily limit reached' } : base;
     try {
-      const p = buildPrompt(q, ctx, notes, history);
-      const { j, model } = await this.generate({
-        systemInstruction: { parts: [{ text: p.system }] },
-        contents: p.contents,
-        generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0.4 },
-        safetySettings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }],
-      });
-      const cand = j.candidates?.[0];
-      const parts: any[] = cand?.content?.parts ?? [];
-      const text = parts
-        .filter((x) => !x.thought && typeof x.text === 'string')
-        .map((x) => x.text)
-        .join('')
-        .trim();
-      // only a finished answer is shown: one cut off by the token limit, or stopped for safety or
-      // recitation, gives the built-in answer instead and is never cached
-      const finish: string = cand?.finishReason ?? 'STOP';
-      if (finish !== 'STOP') {
-        console.warn(`[saans] ${model} stopped with ${finish} after ${text.length} chars; using built-in answer`);
-        return { ...base, fallback: true, reason: finish === 'MAX_TOKENS' ? 'answer was cut off' : 'answer withheld' };
-      }
-      if (!text) throw new Error('empty answer');
-      const a: Answer = { ...base, text: cleanModelText(text), engine: 'gemini', model: j.modelVersion ?? model };
-      this.fails = 0;
-      this.cache.set(key, { at: this.now, a });
-      if (this.cache.size > CACHE_MAX) this.cache.delete(this.cache.keys().next().value!); // oldest first
-      return a;
+      return await this.fromGemini(key, base, buildPrompt(q, ctx, notes, history));
     } catch (err) {
-      console.warn('[saans] Gemini failed, using built-in answer:', (err as Error).message);
-      if (++this.fails >= BREAKER_FAILS) {
-        this.openUntil = this.now + BREAKER_MS;
-        this.fails = 0;
-      }
-      const st = (err as { status?: number }).status;
-      return { ...base, fallback: true, reason: st === 429 ? 'Gemini is busy' : 'Gemini unavailable' };
+      return this.failed(err, base);
     }
+  }
+
+  /** Ask Gemini; only a finished answer is shown and cached. */
+  private async fromGemini(key: string, base: Answer, p: ReturnType<typeof buildPrompt>): Promise<Reply> {
+    const { j, model } = await this.generate({
+      systemInstruction: { parts: [{ text: p.system }] },
+      contents: p.contents,
+      generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0.4 },
+      safetySettings: [{ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }],
+    });
+    const { text, finish } = readCandidate(j);
+    // one cut off by the token limit, or stopped for safety or recitation, gives the built-in
+    // answer instead and is never cached
+    if (finish !== 'STOP') {
+      console.warn(`[saans] ${model} stopped with ${finish} after ${text.length} chars; using built-in answer`);
+      return { ...base, fallback: true, reason: finish === 'MAX_TOKENS' ? 'answer was cut off' : 'answer withheld' };
+    }
+    if (!text) throw new Error('empty answer');
+    const a: Answer = { ...base, text: cleanModelText(text), engine: 'gemini', model: j.modelVersion ?? model };
+    this.fails = 0;
+    this.cache.set(key, { at: this.now, a });
+    if (this.cache.size > CACHE_MAX) this.cache.delete(this.cache.keys().next().value!); // oldest first
+    return a;
+  }
+
+  /** Gemini failed: count it (3 in a row pause Gemini for a minute) and answer from the built-in engine. */
+  private failed(err: unknown, base: Answer): Reply {
+    console.warn('[saans] Gemini failed, using built-in answer:', (err as Error).message);
+    if (++this.fails >= BREAKER_FAILS) {
+      this.openUntil = this.now + BREAKER_MS;
+      this.fails = 0;
+    }
+    return { ...base, fallback: true, reason: statusOf(err) === 429 ? 'Gemini is busy' : 'Gemini unavailable' };
   }
 
   /**
@@ -377,39 +409,7 @@ export class Ai {
       get(`https://data.sensor.community/airrohr/v1/filter/area=${la},${lo},8`, 6000),
     ]);
     let v: AirNow | null = air ? parseOpenMeteo(air, new Date(this.now)) : null;
-    if (this.hasGoogleAir) {
-      try {
-        const g = await withTimeout(8000, async (signal) => {
-          const r = await this.f('https://airquality.googleapis.com/v1/currentConditions:lookup', {
-            method: 'POST',
-            signal,
-            headers: { 'content-type': 'application/json', 'x-goog-api-key': this.cfg.airKey! },
-            body: JSON.stringify({
-              location: { latitude: lat, longitude: lon },
-              extraComputations: ['POLLUTANT_CONCENTRATION', 'LOCAL_AQI'],
-            }),
-          });
-          return r.ok ? r.json() : null;
-        });
-        const pm = (code: string) =>
-          g?.pollutants?.find((p: any) => p.code === code)?.concentration?.value as number | undefined;
-        const pm25 = pm('pm25'),
-          pm10 = pm('pm10');
-        if (pm25 != null) {
-          v = {
-            ...(v ?? { hours: [] }),
-            at: g.dateTime ?? new Date(this.now).toISOString(),
-            pm25,
-            pm10: pm10 ?? v?.pm10 ?? pm25 * 1.6,
-            // keep the CPCB 24-hour AQI from the forecast when we have it; otherwise this hour's estimate
-            aqi: v?.aqi.basis === '24h' ? v.aqi : aqiFrom(pm25, pm10, 'hourly')!,
-            source: v ? 'Google Air Quality API (now) + CAMS forecast' : 'Google Air Quality API',
-          } as AirNow;
-        }
-      } catch {
-        /* keep the CAMS reading */
-      }
-    }
+    if (this.hasGoogleAir) v = (await this.googleAir(lat, lon, v).catch(() => null)) ?? v;
     if (v) {
       v.weather = wx ? parseWeather(wx, new Date(this.now)) : null;
       v.ground = sensors ? parseSensors(sensors) : null;
@@ -417,5 +417,34 @@ export class Ai {
     this.airCache.set(key, { at: this.now, v });
     if (this.airCache.size > AIR_CACHE_MAX) this.airCache.delete(this.airCache.keys().next().value!);
     return v;
+  }
+
+  /** Google's current reading (when keyed) on top of the CAMS forecast; null keeps the forecast. */
+  private async googleAir(lat: number, lon: number, v: AirNow | null): Promise<AirNow | null> {
+    const g = await withTimeout(8000, async (signal) => {
+      const r = await this.f('https://airquality.googleapis.com/v1/currentConditions:lookup', {
+        method: 'POST',
+        signal,
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': this.cfg.airKey! },
+        body: JSON.stringify({
+          location: { latitude: lat, longitude: lon },
+          extraComputations: ['POLLUTANT_CONCENTRATION', 'LOCAL_AQI'],
+        }),
+      });
+      return r.ok ? ((await r.json()) as GoogleAirResponse) : null;
+    });
+    const pm = (code: string) => g?.pollutants?.find((p) => p.code === code)?.concentration?.value;
+    const pm25 = pm('pm25');
+    const pm10 = pm('pm10');
+    if (pm25 == null) return null;
+    return {
+      ...(v ?? { hours: [] }),
+      at: g?.dateTime ?? new Date(this.now).toISOString(),
+      pm25,
+      pm10: pm10 ?? v?.pm10 ?? pm25 * 1.6,
+      // keep the CPCB 24-hour AQI from the forecast when we have it; otherwise this hour's estimate
+      aqi: v?.aqi.basis === '24h' ? v.aqi : aqiFrom(pm25, pm10, 'hourly')!,
+      source: v ? 'Google Air Quality API (now) + CAMS forecast' : 'Google Air Quality API',
+    };
   }
 }
