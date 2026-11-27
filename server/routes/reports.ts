@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { REPORT_KINDS, isReportKind, type ReportKind } from '../../shared/live.ts';
 import { haversine } from '../../shared/geo.ts';
+import { inCoverageArea } from '../../shared/air.ts';
 import { HttpError, readBody } from '../http.ts';
 import { isLonLat, obj, type Json } from '../validate.ts';
 import type { Ctx, Routes } from '../context.ts';
@@ -39,6 +40,7 @@ function addReport(ctx: Ctx, dev: string, b: Json) {
   if (!isLonLat([b.lon, b.lat]) || !isLonLat([at.lon, at.lat])) throw new HttpError(400, 'Location needed');
   const lon = b.lon as number;
   const lat = b.lat as number;
+  if (!inCoverageArea(lat, lon)) throw new HttpError(400, 'Reports are for places in Delhi NCT only');
   const me = reporterAt(b);
   // you can only report a spot you are near
   if (haversine(lon, lat, me.lon, me.lat) > 300 + me.acc)

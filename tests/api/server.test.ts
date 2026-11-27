@@ -212,6 +212,7 @@ describe('input safety (NFR-5)', () => {
       },
       { edges: [-1] },
       { dest: 'home' },
+      { dest: [2.35, 48.85] }, // outside Delhi NCT
       { etaS: 0 },
       { etaS: 99999 },
     ])
@@ -260,6 +261,10 @@ describe('live safety reports', () => {
     expect(far.status).toBe(403);
     const bad = await call('POST', '/api/reports', { kind: 'aliens', lon: spot[0], lat: spot[1], at: at() }, DEV_C);
     expect(bad.status).toBe(400);
+    // only Delhi NCT has street data, so a report anywhere else is refused (even with a matching position)
+    const paris = { lon: 2.35, lat: 48.85 };
+    const away = await call('POST', '/api/reports', { kind: 'dark', ...paris, at: { ...paris, acc: 10 } }, DEV_C);
+    expect(away.status).toBe(400);
     const ok = await call('POST', '/api/reports', { kind: 'dark', lon: spot[0], lat: spot[1], at: at() }, DEV_C);
     expect(ok.status).toBe(200);
     expect(ok.body.merged).toBe(false);

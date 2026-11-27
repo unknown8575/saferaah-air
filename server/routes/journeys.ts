@@ -3,6 +3,7 @@
 import type { IncomingMessage } from 'node:http';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { JourneyMonitor, reviewEligibility, type Fix } from '../../shared/journey.ts';
+import { inCoverageArea } from '../../shared/air.ts';
 import { MODES, type Mode } from '../../shared/modes.ts';
 import { sendSms, smsConfigured, normalizeIndianPhone } from '../notify.ts';
 import { bump } from '../db.ts';
@@ -93,7 +94,7 @@ async function relaySms(ctx: Ctx, tripId: string, kind: 'sos' | 'notify', b: Jso
 function startJourney(ctx: Ctx, dev: string, b: Json) {
   if (!MODES.includes(b.mode as Mode)) throw new HttpError(400, 'Invalid mode');
   const r = routeBody(b);
-  if (!isLonLat(b.dest)) throw new HttpError(400, 'Invalid destination');
+  if (!isLonLat(b.dest) || !inCoverageArea(b.dest[1], b.dest[0])) throw new HttpError(400, 'Invalid destination');
   const id = randomUUID();
   const token = randomBytes(24).toString('base64url');
   const shareId = randomBytes(16).toString('base64url');
