@@ -53,11 +53,7 @@ function offerSimulation(): void {
       'div',
       { class: 'modal-card' },
       h('h2', null, 'Tracking needs your location'),
-      h(
-        'p',
-        null,
-        'To watch your journey and tell your contacts when you reach, SafeRaah needs GPS. Location is blocked here.',
-      ),
+      h('p', null, 'To guide you and know when you reach, SafeRaah Air needs GPS. Location is blocked here.'),
       h('p', { class: 'fine' }, 'You can try the journey with simulated movement instead.'),
       h('button', { class: 'btn primary wide', on: { click: simulate } }, 'Simulate the trip'),
       h('button', { class: 'btn ghost wide', on: { click: () => closeModal() } }, 'Cancel'),
@@ -306,7 +302,13 @@ export async function endJourney(confirmed: boolean) {
         'div',
         { class: 'modal-card' },
         h('h2', null, 'End this trip?'),
-        h('p', null, 'Your contacts will not get an arrival message.'),
+        h(
+          'p',
+          null,
+          notifyPhones(S.settings.contacts).length
+            ? 'Your contacts will not get an arrival message.'
+            : 'Guidance stops here. You can plan this trip again any time.',
+        ),
         h(
           'div',
           { class: 'row2' },

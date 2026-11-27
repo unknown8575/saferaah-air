@@ -170,7 +170,7 @@ export function renderSearchTop() {
       input,
       hasPlace
         ? h('button', { class: 'sb-btn', 'aria-label': 'Clear', on: { click: () => goHome() } }, icon('close', 20))
-        : h('span', { class: 'logo', 'aria-hidden': 'true', title: 'SafeRaah' }),
+        : h('span', { class: 'logo', 'aria-hidden': 'true', title: 'SafeRaah Air' }),
       list,
     ),
     catChips(),

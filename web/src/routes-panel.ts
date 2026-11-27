@@ -115,7 +115,8 @@ export async function planRoutes(opts: { quiet?: boolean } = {}) {
   let reply: RouteReply;
   try {
     const req = { type: 'route' as const, from, to, mode: S.settings.mode, when, profile: S.settings.profile };
-    reply = (await rpc<{ reply: RouteReply }>({ ...req, pm25: S.air?.pm25 ?? null })).reply;
+    const contacts = S.settings.contacts.filter((c) => c.notify).length;
+    reply = (await rpc<{ reply: RouteReply }>({ ...req, pm25: S.air?.pm25 ?? null, contacts })).reply;
   } catch (err) {
     if (seq !== planSeq) return;
     S.reply = null;

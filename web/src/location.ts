@@ -22,8 +22,8 @@ function nativeSource(): PositionSource {
     start(onFix, onError) {
       BG.addWatcher(
         {
-          backgroundTitle: 'SafeRaah is watching your journey',
-          backgroundMessage: 'We will tell your contacts when you arrive. Open the app for SOS.',
+          backgroundTitle: 'SafeRaah Air is guiding your trip',
+          backgroundMessage: 'Open the app for directions, check-ins and SOS.',
           requestPermissions: true,
           stale: false,
           distanceFilter: 5,
@@ -85,7 +85,9 @@ function webSource(): PositionSource {
           const now = Date.now();
           if (now - lastFixAt > 60000 && now - warnedAt > 60000) {
             warnedAt = now;
-            onError('No GPS signal for a minute. Your contacts still have your last location.');
+            onError(
+              'No GPS signal for a minute. Guidance resumes when it returns; a shared live link shows your last location.',
+            );
           }
         },
         { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 },

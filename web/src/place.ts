@@ -188,7 +188,7 @@ export async function sharePlace(p: Place) {
   const u = new URL(location.href.split('?')[0]);
   u.searchParams.set('to', `${p.lonlat[0].toFixed(5)},${p.lonlat[1].toFixed(5)}`);
   u.searchParams.set('toName', p.label);
-  const text = `${p.label} — open in SafeRaah for safe routes`;
+  const text = `${p.label} — open in SafeRaah Air for clean-air and safe routes`;
   if (navigator.share) {
     try {
       await navigator.share({ title: p.label, text, url: u.href });

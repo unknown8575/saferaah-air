@@ -7,6 +7,7 @@ import { haversine } from '../../shared/geo.ts';
 import { S, clockText, myLonLat, now, setView, sheet, smap } from './app.ts';
 import { drawMe } from './here.ts';
 import { askSaans } from './ask.ts';
+import { openDirections } from './directions.ts';
 import { startPick } from './pick.ts';
 import { renderSearchTop } from './searchbar.ts';
 
@@ -64,11 +65,15 @@ export function renderHome() {
         : null,
       airHome({
         air: S.air,
+        airFailed: S.airTried && !S.air,
         plan,
         clock: clockText(now()),
         familySet: st.familySet,
         onAsk: () => askSaans(),
-        onPlanTrip: () => (document.getElementById('q') as HTMLInputElement | null)?.focus(),
+        onPlanTrip: () => {
+          openDirections();
+          (document.getElementById('f-to') as HTMLInputElement | null)?.focus();
+        },
       }),
       nearReports
         ? h(

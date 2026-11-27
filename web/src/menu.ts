@@ -114,10 +114,10 @@ export function openMenu() {
     h(
       'div',
       { class: 'modal-card menu' },
-      h('div', { class: 'brand' }, h('span', { class: 'logo', 'aria-hidden': 'true' }), 'SafeRaah'),
+      h('div', { class: 'brand' }, h('span', { class: 'logo', 'aria-hidden': 'true' }), 'SafeRaah Air'),
       menuRow('sparkle', 'Saans: clean-air assistant', () => hooks.askSaans(), { id: 'menu-saans' }),
       menuRow('layers', 'Map layers (street air, safety)', openLayers),
-      menuRow('help', 'How to use SafeRaah', showHelp),
+      menuRow('help', 'How to use SafeRaah Air', showHelp),
       h('h3', { class: 'menu-sect' }, 'Family safety'),
       menuRow('police', 'Safe places near me', () => hooks.showCategory('safe')),
       menuRow('contacts', 'Trusted contacts & settings', showContacts),

@@ -14,10 +14,10 @@ export async function refreshAir(): Promise<AirNow | null> {
   const p = myLonLat() ?? (smap ? ([smap.map.getCenter().lng, smap.map.getCenter().lat] as LonLat) : null);
   if (!p) return S.air;
   const v = await airAt(p, { server: isOnline() });
-  if (v) {
-    S.air = v;
-    if (S.view === 'home') renderHome();
-  }
+  const first = !S.airTried;
+  S.airTried = true;
+  if (v) S.air = v;
+  if ((v || first) && S.view === 'home') renderHome();
   return S.air;
 }
 /** Saans is loaded on first use (its own chunk), so the map opens faster. */

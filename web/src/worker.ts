@@ -117,7 +117,14 @@ function routes(m: Extract<WorkerRequest, { type: 'route' }>): RouteReply {
     note: res.note,
     error: res.error,
     computeMs: res.computeMs,
-    advice: adviseTrip({ mode: m.mode, profile: m.profile, when, routes: res.routes, vehicleAltS: vehicleAlt }),
+    advice: adviseTrip({
+      mode: m.mode,
+      profile: m.profile,
+      when,
+      routes: res.routes,
+      vehicleAltS: vehicleAlt,
+      contacts: m.contacts,
+    }),
     snapped: {
       from: res.from ? [res.from.lon, res.from.lat] : m.from,
       to: res.to ? [res.to.lon, res.to.lat] : m.to,

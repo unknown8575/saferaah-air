@@ -223,7 +223,7 @@ def tc99(b, base):
     page.wait_for_function("() => document.querySelector('.list-head h2')?.textContent.includes('Hospitals')", timeout=15000)
     page.get_by_role('button', name='Clear').click()
     page.locator('#menu').click()
-    page.get_by_role('button', name='How to use SafeRaah').click()
+    page.get_by_role('button', name='How to use SafeRaah Air').click()
     expect(page.locator('.guide')).to_have_count(6)
     page.wait_for_timeout(2500)
     loaded = page.evaluate("() => [...document.querySelectorAll('.guide img')].filter(i => i.complete && i.naturalWidth > 0).length")

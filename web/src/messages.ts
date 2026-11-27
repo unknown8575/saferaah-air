@@ -33,14 +33,14 @@ export function shareUrl(shareId: string): string {
 }
 
 export function arrivalText(name: string, place: string, time: string): string {
-  return `${name || 'I'} reached ${place || 'the destination'} safely at ${time}. (SafeRaah)`;
+  return `${name || 'I'} reached ${place || 'the destination'} safely at ${time}. (SafeRaah Air)`;
 }
 
 export function startText(name: string, place: string, eta: string, link?: string): string {
   return (
     `${name || 'I'} started a trip to ${place || 'my destination'}, expected by ${eta}.` +
     (link ? ` Follow live: ${link}` : '') +
-    ' (SafeRaah)'
+    ' (SafeRaah Air)'
   );
 }
 

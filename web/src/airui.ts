@@ -155,7 +155,7 @@ const SMOG_TEXT: Record<SmogLevel, string> = {
 };
 
 /** The big AQI button: number, band, basis, PM2.5 and nearby sensors. */
-function aqiHero(a: AirNow | null, onAsk: () => void): HTMLElement {
+function aqiHero(a: AirNow | null, failed: boolean, onAsk: () => void): HTMLElement {
   const B = a ? AQI_BANDS[a.aqi.band] : null;
   const basis = a?.aqi.basis === '24h' ? '24-hour AQI (CPCB method)' : 'Hourly AQI estimate';
   return h(
@@ -166,13 +166,15 @@ function aqiHero(a: AirNow | null, onAsk: () => void): HTMLElement {
     h(
       'span',
       { class: 'aqi-txt' },
-      h('b', null, a && B ? `${B.label} air` : 'Checking the air…'),
+      h('b', null, a && B ? `${B.label} air` : failed ? 'Live air data unavailable' : 'Checking the air…'),
       h(
         'small',
         null,
         a
           ? `${basis} · PM2.5 now ${Math.round(a.pm25)} µg/m³ · ${(a.pm25 / 15).toFixed(0)}× WHO`
-          : 'Live data for your area',
+          : failed
+            ? 'The forecast could not be reached; tips use general advice. Retrying soon.'
+            : 'Live data for your area',
       ),
       a?.ground ? h('small', null, `Nearby sensors: ${a.ground.pm25} µg/m³ (${a.ground.sensors})`) : null,
     ),
@@ -264,6 +266,8 @@ function topSteps(plan: DayPlan): HTMLElement {
  */
 export function airHome(o: {
   air: AirNow | null;
+  /** the lookup was tried and failed (offline, forecast down) */
+  airFailed?: boolean;
   plan: DayPlan;
   clock: string;
   familySet: boolean;
@@ -276,7 +280,7 @@ export function airHome(o: {
     'section',
     { class: 'air-home', 'aria-labelledby': 'air-title', style: B ? { '--band': B.color } : {} },
     h('h1', { id: 'air-title', class: 'air-title' }, 'Air near you', h('small', null, ` · Delhi · ${o.clock}`)),
-    aqiHero(o.air, o.onAsk),
+    aqiHero(o.air, !!o.airFailed, o.onAsk),
     wx ? conditions(wx.now) : null,
     wx ? smogBanner(wx, o.plan) : null,
     bestTime(o.plan),

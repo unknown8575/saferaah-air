@@ -53,7 +53,17 @@ export type NearbyPlace = Poi & { distM: number; open: boolean; verified: boolea
 export type WorkerRequest =
   | { type: 'init'; base: string; graphParts?: string[] }
   | { type: 'crowd'; stats: [number, number, number][] }
-  | { type: 'route'; from: LonLat; to: LonLat; mode: Mode; when: string; profile: Profile; pm25?: number | null }
+  | {
+      type: 'route';
+      from: LonLat;
+      to: LonLat;
+      mode: Mode;
+      when: string;
+      profile: Profile;
+      pm25?: number | null;
+      /** trusted contacts who get the arrival message (advice wording depends on it) */
+      contacts?: number;
+    }
   | { type: 'reports'; reports: LiveReport[]; now?: number }
   | { type: 'modeTimes'; from: LonLat; to: LonLat; when: string; profile: Profile }
   | { type: 'whereis'; at: LonLat; when?: string; profile?: Profile }

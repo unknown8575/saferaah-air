@@ -115,6 +115,8 @@ export class PlaceSearch {
       else if (qWords.every((w) => it.words.some((x) => x.startsWith(w)))) s = 2;
       else if (nq.length >= 4 && it.n.includes(nq)) s = 1;
       if (!s) continue;
+      // among names that start with the query, the one it covers most wins ("Okhla Industrial" → "… Area", not "… Phase 3")
+      if (s === 3) s += (0.5 * nq.length) / it.n.length;
       s += TYPE_BOOST[it.e[3]] ?? 0.2;
       s -= Math.min(0.5, it.n.length / 200);
       if (near) {

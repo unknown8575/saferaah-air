@@ -283,8 +283,25 @@ function liveLinkNote(J: Journey): HTMLElement {
   return h('p', { class: 'fine' }, why);
 }
 
+/**
+ * Redraw the sheet only when what it shows changes: GPS fixes arrive every second, and
+ * replacing the buttons under a finger would swallow the tap (End, Share, Switch).
+ */
 function drawSheet(J: Journey, p: Progress): void {
   const { info } = p;
+  const sig = [
+    fmtDuration(info.remainS),
+    info.etaText,
+    fmtDist(info.remainM),
+    S.settings.mode,
+    J.offRoute,
+    J.rerouting,
+    J.better && !J.dismissedBetter ? J.better.timeS : '',
+    !!J.handle,
+    isOnline(),
+  ].join('|');
+  if (sheet.dataset.journeySig === sig && sheet.querySelector('.journey-row')) return;
+  sheet.dataset.journeySig = sig;
   clear(
     sheet,
     offRouteBox(J),

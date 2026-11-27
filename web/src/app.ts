@@ -101,6 +101,8 @@ export const S = {
   reports: [] as LiveReport[],
   reportsAt: 0,
   air: null as AirNow | null,
+  /** set after the first air lookup, so a failure is shown instead of "checking" forever */
+  airTried: false,
   airFor: '' as string,
   journey: null as null | {
     route: WorkerRoute;

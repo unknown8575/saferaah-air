@@ -117,6 +117,16 @@ describe('air-first home', () => {
     expect(el.textContent).toContain('Checking the air');
     expect(el.querySelector('.conditions')).toBeNull();
     expect(el.querySelector('.smog')).toBeNull();
+    const failed = airHome({
+      air: null,
+      airFailed: true,
+      plan: dayPlan(null, null),
+      clock: '9:00 AM',
+      familySet: false,
+      ...handlers(),
+    });
+    expect(failed.textContent).toContain('Live air data unavailable');
+    expect(failed.textContent).not.toContain('Checking the air');
     const card = aqiCard(null, () => {});
     expect(card.textContent).toContain('Checking the air near you');
   });
@@ -160,6 +170,9 @@ describe('offline place search', () => {
     expect(ps.query('okhla industrial estate ph 2', 1)[0].name).toBe('Okhla Industrial Area Phase 2');
     expect(ps.query('Okhla Industrial', 1)[0].type).toBe('industrial');
     expect(ps.query('wazirpur', 1)[0].name).toBe('Wazirpur Industrial Area');
+    // standing next to Phase 3, "Okhla Industrial" still means the area itself first
+    const phase3 = ps.query('Okhla Industrial Area Phase 3', 1)[0];
+    expect(ps.query('Okhla Industrial', 3, [phase3.lon, phase3.lat])[0].name).toBe('Okhla Industrial Area');
   });
   it('UI-09 exact names and nicknames come first; very short queries return nothing', () => {
     expect(ps.query('India Gate', 1)[0].name).toBe('India Gate');
@@ -203,7 +216,7 @@ describe('on-device settings and messages', async () => {
     expect(msg.telLink('112')).toBe('tel:112');
     expect(msg.sosText('Asha', 77.2, 28.6)).toContain('openstreetmap.org/?mlat=28.60000&mlon=77.20000');
     expect(msg.startText('', '', '9:00 PM', 'https://x/t')).toBe(
-      'I started a trip to my destination, expected by 9:00 PM. Follow live: https://x/t (SafeRaah)',
+      'I started a trip to my destination, expected by 9:00 PM. Follow live: https://x/t (SafeRaah Air)',
     );
     expect(msg.arrivalText('Asha', 'Home', '9:05 PM')).toContain('reached Home safely');
     expect(

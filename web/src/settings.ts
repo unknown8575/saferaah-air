@@ -140,7 +140,7 @@ function confirmWipe(): void {
       'div',
       { class: 'modal-card' },
       h('h2', null, 'Delete everything on this phone?'),
-      h('p', null, 'Removes your contacts, name, family profile and settings from SafeRaah on this phone.'),
+      h('p', null, 'Removes your contacts, name, family profile and settings from SafeRaah Air on this phone.'),
       h(
         'div',
         { class: 'row2' },
@@ -261,7 +261,7 @@ export function showHelp() {
       'div',
       { class: 'summary' },
       h('button', { class: 'back', 'aria-label': 'Back', on: { click: () => goBack(prev) } }, icon('back', 24)),
-      h('h2', null, 'How to use SafeRaah'),
+      h('h2', null, 'How to use SafeRaah Air'),
     ),
     h(
       'div',
