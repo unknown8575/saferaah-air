@@ -213,16 +213,28 @@ export function buildPrompt(q: string, ctx: AssistantContext, notes: Note[], his
 }
 
 /** Tidy model output: no headings or bold markers, sane length. */
+const MAX_ANSWER_CHARS = 1600;
+
+/** Shorten to `max` characters at the end of a sentence or line, never mid-sentence. */
+export function clip(s: string, max = MAX_ANSWER_CHARS): string {
+  if (s.length <= max) return s;
+  const head = s.slice(0, max);
+  const end = Math.max(...['. ', '.\n', '। ', '! ', '? ', '\n'].map((m) => head.lastIndexOf(m)));
+  return end > max / 2 ? head.slice(0, end + 1).trim() : head.slice(0, head.lastIndexOf(' ')).trim() + '…';
+}
+
+/** Model output as plain text: no markdown headings or bold, bullets as "•", at most 1,600 characters. */
 export function cleanModelText(s: string): string {
-  return s
-    .replace(/^#+\s*/gm, '')
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/\*\*/g, '') // an unpaired bold marker
-    .replace(/^\s*\*\s+/gm, '• ')
-    .replace(/^\s*-\s+/gm, '• ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-    .slice(0, 1600);
+  return clip(
+    s
+      .replace(/^#+\s*/gm, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*\*/g, '') // an unpaired bold marker
+      .replace(/^\s*\*\s+/gm, '• ')
+      .replace(/^\s*-\s+/gm, '• ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+  );
 }
 
 // ------------------------------------------------------------ built-in engine

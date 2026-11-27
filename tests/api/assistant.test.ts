@@ -130,6 +130,12 @@ describe('Saans API', () => {
     expect(g.url).not.toContain('air-test'); // key travels in a header, not the URL
     expect(g.headers['x-goog-api-key']).toBe('air-test');
     expect((await call(base, 'GET', '/api/air?lat=abc&lon=1')).status).toBe(400);
+    // a missing or empty coordinate is an invalid position, not "0" (which would read as outside Delhi)
+    for (const q of ['lat=28.6', 'lon=77.2', 'lat=28.6&lon=', 'lat=&lon=77.2']) {
+      const r = await call(base, 'GET', `/api/air?${q}`);
+      expect(r.status).toBe(400);
+      expect(r.body.error).toBe('Invalid position');
+    }
     // weather that traps smog and nearby community sensors come with it
     expect(r.body.weather.smog.inversion).toBe(true);
     expect(['high', 'severe']).toContain(r.body.weather.smog.level);

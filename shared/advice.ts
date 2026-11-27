@@ -32,8 +32,11 @@ export function adviseTrip(opts: {
   routes: RouteResult[];
   /** fastest time for an auto/cab over the same trip, if computed */
   vehicleAltS?: { mode: Mode; timeS: number; tier: Tier; fastestS?: number };
+  /** how many trusted contacts get the arrival message (0: none saved, so promise nothing) */
+  contacts?: number;
 }): Advice | null {
   const { mode, profile, when, routes, vehicleAltS } = opts;
+  const arrival = (opts.contacts ?? 0) > 0;
   if (!routes.length) return null;
   const best = routes.reduce((a, b) => (RANK[b.tier] < RANK[a.tier] ? b : a));
   const bestRank = RANK[best.tier];
@@ -78,12 +81,14 @@ export function adviseTrip(opts: {
     return {
       level: 'caution',
       title: 'Mostly safe, a few quiet parts',
-      body: 'Stick to the yellow or green route. We will tell your contacts when you arrive.',
+      body: `Stick to the yellow or green route. ${arrival ? 'We will tell your contacts when you arrive.' : 'Add a trusted contact if you want someone told when you arrive.'}`,
     };
   }
   return {
     level: 'ok',
     title: 'Busy, open streets on the safest route',
-    body: 'We will still send an arrival message to your contacts when you reach.',
+    body: arrival
+      ? 'We will still send an arrival message to your contacts when you reach.'
+      : 'Enjoy the trip; add a trusted contact if you want someone told when you reach.',
   };
 }

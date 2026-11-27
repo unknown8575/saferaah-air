@@ -19,7 +19,7 @@ import { MODE_INFO, F_FOOT, F_VEHICLE, edgeSeconds, WALK_KMH, type Mode } from '
 import { computeRisk, type RiskField } from './risk.ts';
 import { CAT_INFO, type PoiCat } from './places.ts';
 import { isPeakIST } from './time.ts';
-import type { LonLat } from './geo.ts';
+import { haversine, type LonLat } from './geo.ts';
 import { astar, geometryOf, overlap, type PathResult } from './astar.ts';
 import { describeRoute } from './describe.ts';
 import {
@@ -44,6 +44,9 @@ interface Job {
   usable: (e: number) => boolean;
   exposure: number;
 }
+
+/** closer than this, start and destination are one place */
+const SAME_PLACE_M = 25;
 
 /** Longest a slower route may take and still be shown. */
 const detourLimit = (fastestT: number, extraS = 240) => Math.max(fastestT * MAX_DETOUR, fastestT + extraS);
@@ -167,6 +170,8 @@ export class Router {
     const fail = (error: string) => ({ ...base, error, computeMs: performance.now() - t0 });
     if (!s) return fail('Start point is too far from any road we know.');
     if (!t) return fail('Destination is too far from any road we know.');
+    if (haversine(req.from[0], req.from[1], req.to[0], req.to[1]) < SAME_PLACE_M)
+      return fail('Start and destination are the same place: you are already there.');
     const times = this.edgeTimes(req.mode, req.when, req.ctx.profile);
     const job: Job = { req, s, t, times, risk, usable, exposure: MODE_INFO[req.mode].exposure };
     const accepted = this.sweep(job);

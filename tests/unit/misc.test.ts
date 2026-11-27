@@ -43,7 +43,7 @@ describe('offline search (FR-1)', () => {
 describe('messages (FR-12, FR-15)', () => {
   it('TC-84 builds SMS, WhatsApp and SOS texts', () => {
     const body = arrivalText('Riya', 'Giri Nagar', '10:42 pm');
-    expect(body).toBe('Riya reached Giri Nagar safely at 10:42 pm. (SafeRaah)');
+    expect(body).toBe('Riya reached Giri Nagar safely at 10:42 pm. (SafeRaah Air)');
     const link = smsLink(['+919876543210', '+919123456780'], body);
     expect(link.startsWith('sms:+919876543210,+919123456780')).toBe(true);
     expect(link).toContain(encodeURIComponent('Giri Nagar'));

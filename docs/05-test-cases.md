@@ -33,7 +33,7 @@ Each case is automated. **U** = unit test (vitest, `tests/unit`), **A** = API te
 | TC-21 | U normal | Any returned set | ≤4 routes; no two share >85% length | FR-4 |
 | TC-22 | U normal | Ranked routes ≤1.6× fastest time (or +4 min) | true | FR-4 |
 | TC-23 | U normal | Tier colours follow absolute risk; daytime main-road trip all green | true | FR-5 |
-| TC-24 | U edge | Start == destination | one route of ~0 m, no crash | — |
+| TC-24 | U edge | Start == destination (or within 25 m) | no route card; a clear "you are already there" message, no crash | — |
 | TC-25 | U edge | Point outside coverage / middle of the Yamuna | clear error message, no routes | FR-1 |
 | TC-26 | U edge | Car never uses footway/steps; walk never uses motorway; auto never uses motorway | true | FR-2 |
 | TC-27 | U edge | One-way street (synthetic graph) | car respects direction; walk may go both ways | — |

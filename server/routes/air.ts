@@ -5,6 +5,13 @@ import { HttpError, readBody } from '../http.ts';
 import { assistantContext, chatHistory, obj } from '../validate.ts';
 import type { Ctx, Routes } from '../context.ts';
 
+/** A coordinate from the query string; null when missing, empty or not a number ("" would read as 0). */
+function coordinate(v: string | null): number | null {
+  if (v === null || v.trim() === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function airRoutes(ctx: Ctx): Routes {
   const { opts } = ctx;
   return {
@@ -19,9 +26,9 @@ export function airRoutes(ctx: Ctx): Routes {
     // Air now + next 24 h for a ~10 km cell. Nothing about the request is stored.
     'GET /api/air': async (req) => {
       const u = new URL(req.url ?? '/', 'http://x');
-      const lat = Number(u.searchParams.get('lat'));
-      const lon = Number(u.searchParams.get('lon'));
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new HttpError(400, 'Invalid position');
+      const lat = coordinate(u.searchParams.get('lat'));
+      const lon = coordinate(u.searchParams.get('lon'));
+      if (lat === null || lon === null) throw new HttpError(400, 'Invalid position');
       // this service only has street data and advice for Delhi NCT, so it only proxies air data there
       if (!inCoverageArea(lat, lon)) throw new HttpError(400, 'Air data is available for Delhi NCT only');
       if (!opts.ai) throw new HttpError(503, 'Air data not configured');

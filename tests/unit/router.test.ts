@@ -79,9 +79,9 @@ describe('tiered routes (FR-3, FR-4)', () => {
       when,
       ctx: { when, profile: 'woman', pois },
     });
-    expect(r.error).toBeUndefined();
-    expect(r.routes.length).toBe(1);
-    expect(r.routes[0].lengthM).toBeLessThan(1);
+    // no "1 min, 0 m" route card: the app says you are already there
+    expect(r.routes).toHaveLength(0);
+    expect(r.error).toContain('same place');
   });
 
   it('TC-25 points outside coverage give a clear error', () => {
@@ -203,6 +203,18 @@ describe('tiered routes (FR-3, FR-4)', () => {
       routes: plan('chandniNdls', 'walk', '12:00').routes,
     });
     expect(dayAdv?.level).toBe('ok');
+  });
+
+  it('TC-30b advice only promises an arrival message when a trusted contact is saved', () => {
+    const routes = plan('chandniNdls', 'walk', '12:00').routes;
+    const caution = routes.map((r) => ({ ...r, tier: 'yellow' as const }));
+    const without = adviseTrip({ mode: 'walk', profile: 'general', when: ist('12:00'), routes: caution });
+    const withOne = adviseTrip({ mode: 'walk', profile: 'general', when: ist('12:00'), routes: caution, contacts: 1 });
+    expect(without?.body).not.toContain('We will tell your contacts');
+    expect(without?.body).toContain('Add a trusted contact');
+    expect(withOne?.body).toContain('We will tell your contacts when you arrive.');
+    const ok = adviseTrip({ mode: 'walk', profile: 'general', when: ist('12:00'), routes, contacts: 0 });
+    expect(ok?.body).not.toContain('arrival message to your contacts');
   });
 
   it('TC-31 turn-by-turn steps cover the route', () => {
