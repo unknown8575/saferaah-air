@@ -7,7 +7,7 @@ import { type LonLat } from '../../shared/geo.ts';
 import { S, myLonLat, now, smap } from './app.ts';
 import { browsePlace } from './nearby.ts';
 import { renderHome } from './home.ts';
-import { routeSummary } from './routes-panel.ts';
+import { planRoutes, routeSummary } from './routes-panel.ts';
 import { openDirections } from './directions.ts';
 
 export async function refreshAir(): Promise<AirNow | null> {
@@ -15,9 +15,12 @@ export async function refreshAir(): Promise<AirNow | null> {
   if (!p) return S.air;
   const v = await airAt(p, { server: isOnline() });
   const first = !S.airTried;
+  const changed = !!v && v.aqi.value !== S.air?.aqi.value;
   S.airTried = true;
   if (v) S.air = v;
   if ((v || first) && S.view === 'home') renderHome();
+  // routes planned before the air arrived get its dose scaling and the bad-air warning now
+  if (changed && S.view === 'directions' && S.to) void planRoutes({ quiet: true });
   return S.air;
 }
 /** Saans is loaded on first use (its own chunk), so the map opens faster. */
