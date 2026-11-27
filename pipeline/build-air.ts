@@ -10,6 +10,7 @@
 // Distances come from a 50 m raster and a two-pass chamfer distance transform, so
 // the whole city takes a couple of seconds.
 
+import { polygonsOf, type Geometry } from './geojson.ts';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { Graph } from '../shared/graph.ts';
 import { pointInPolygon, type LonLat } from '../shared/geo.ts';
@@ -72,21 +73,27 @@ function distanceField(src: Uint8Array): Float32Array {
 
 // ---------- industrial land ----------
 interface Feature {
-  geometry: { type: string; coordinates: any };
+  geometry: Geometry;
   properties: { kind: string; tags?: Record<string, string> };
 }
 const fc = JSON.parse(readFileSync(inPath, 'utf8')) as { features: Feature[] };
 const ind = new Uint8Array(NX * NY);
+/** Mark the grid cells whose centre lies inside the polygon; false if none did (a sliver). */
+function markCells(rings: LonLat[][], i0: number, i1: number, j0: number, j1: number): boolean {
+  let hit = false;
+  for (let j = j0; j <= j1; j++)
+    for (let i = i0; i <= i1; i++) {
+      if (!pointInPolygon(lonOf(i), latOf(j), rings)) continue;
+      ind[j * NX + i] = 1;
+      hit = true;
+    }
+  return hit;
+}
 let nPoly = 0;
 for (const f of fc.features) {
   const lu = f.properties.tags?.landuse ?? '';
   if (!['industrial', 'quarry', 'construction', 'brownfield'].includes(lu)) continue;
-  const polys: LonLat[][][] =
-    f.geometry.type === 'Polygon'
-      ? [f.geometry.coordinates]
-      : f.geometry.type === 'MultiPolygon'
-        ? f.geometry.coordinates
-        : [];
+  const polys = polygonsOf(f.geometry);
   for (const rings of polys) {
     if (!rings.length || rings[0].length < 4) continue;
     nPoly++;
@@ -100,18 +107,7 @@ for (const f of fc.features) {
       y0 = Math.min(y0, y);
       y1 = Math.max(y1, y);
     }
-    const i0 = cx(x0),
-      i1 = cx(x1),
-      j0 = cy(y0),
-      j1 = cy(y1);
-    let hit = false;
-    for (let j = j0; j <= j1; j++)
-      for (let i = i0; i <= i1; i++) {
-        if (pointInPolygon(lonOf(i), latOf(j), rings)) {
-          ind[j * NX + i] = 1;
-          hit = true;
-        }
-      }
+    const hit = markCells(rings, cx(x0), cx(x1), cy(y0), cy(y1));
     // slivers narrower than a cell still count
     if (!hit) ind[cy((y0 + y1) / 2) * NX + cx((x0 + x1) / 2)] = 1;
   }

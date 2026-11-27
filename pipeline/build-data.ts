@@ -20,6 +20,8 @@ import { LocalProjection, GridIndex, pointInPolygon, ringAreaM2, type LonLat } f
 import { encodeGraph, type GraphArrays } from '../shared/graph.ts';
 import { RC, roadClassOf, F_FOOT, F_VEHICLE, F_ONEWAY, F_ONEWAY_KNOWN, type RoadClass } from '../shared/modes.ts';
 import { poiCategory, type Poi } from '../shared/places.ts';
+import { linesOf, polygonsOf, type Geometry } from './geojson.ts';
+import { buildSearchIndex } from './search-index.ts';
 
 const [, , inPath, outDir, areaName = 'Delhi'] = process.argv;
 if (!inPath || !outDir) {
@@ -31,7 +33,7 @@ const t0 = Date.now();
 const log = (...a: unknown[]) => console.log(`[${((Date.now() - t0) / 1000).toFixed(1)}s]`, ...a);
 
 interface Feature {
-  geometry: { type: string; coordinates: any };
+  geometry: Geometry;
   properties: { kind: string; name?: string; tags?: Record<string, string>; center?: LonLat; snapshot?: string };
 }
 const fc = JSON.parse(readFileSync(inPath, 'utf8')) as {
@@ -53,7 +55,7 @@ let snapshot = fc.snapshot ?? '';
 for (const f of fc.features) {
   if (f.properties.kind !== 'road') continue;
   snapshot ||= f.properties.snapshot ?? '';
-  const lines: LonLat[][] = f.geometry.type === 'LineString' ? [f.geometry.coordinates] : f.geometry.coordinates;
+  const lines = linesOf(f.geometry);
   for (const l of lines)
     for (const [x, y] of l) {
       if (x < minLon) minLon = x;
@@ -152,7 +154,7 @@ for (const f of fc.features) {
     reverse = true;
   }
   const nm = nameOf((t['name:en'] || t.name || f.properties.name || '').trim());
-  const lines: LonLat[][] = f.geometry.type === 'LineString' ? [f.geometry.coordinates] : f.geometry.coordinates;
+  const lines = linesOf(f.geometry);
   for (const line of lines) {
     const pts: [number, number][] = [];
     for (const [x, y] of line) {
@@ -259,10 +261,8 @@ for (const w of ways) {
     if (last || junction || len >= MAX_EDGE_M) {
       const u = node(w.pts[start]),
         v = node(w.pts[i]);
-      if (u !== v || i - start > 1) {
-        if (u !== v && len > 0.05)
-          raw.push({ u, v, shape: w.pts.slice(start + 1, i), len, cls: w.cls, flags: w.flags, name: w.name });
-      }
+      if (u !== v && len > 0.05)
+        raw.push({ u, v, shape: w.pts.slice(start + 1, i), len, cls: w.cls, flags: w.flags, name: w.name });
       start = i;
       len = 0;
     }
@@ -443,12 +443,7 @@ for (const f of fc.features) {
     ['industrial', 'construction', 'brownfield', 'quarry', 'cemetery', 'military'].includes(t.landuse ?? '') ||
     t.amenity === 'grave_yard';
   if (!isGreen && !industrial) continue;
-  const polys: LonLat[][][] =
-    f.geometry.type === 'Polygon'
-      ? [f.geometry.coordinates]
-      : f.geometry.type === 'MultiPolygon'
-        ? f.geometry.coordinates
-        : [];
+  const polys = polygonsOf(f.geometry);
   for (const rings of polys) {
     if (!rings.length || rings[0].length < 4) continue;
     const area = ringAreaM2(proj, rings[0]);
@@ -468,21 +463,19 @@ for (const f of fc.features) {
     aGrid.insertBBox(id, x0 - 0.0004, y0 - 0.0004, x1 + 0.0004, y1 + 0.0004);
   }
 }
+/** within `m` metres of the ring's edge (beside a large park) */
+function nearRing(x: number, y: number, ring: LonLat[], m: number): boolean {
+  for (let k = 1; k < ring.length; k++)
+    if (proj.pointSegDist(x, y, ring[k - 1][0], ring[k - 1][1], ring[k][0], ring[k][1]) < m) return true;
+  return false;
+}
 for (let j = 0; j < M; j++) {
   const [x, y] = mids[j];
   let bits = 0;
   for (const id of aGrid.near(x, y, 1)) {
     const a = areas[id];
     if (pointInPolygon(x, y, a.rings)) bits |= a.industrial ? 4 : 1;
-    else if (a.large && !a.industrial && !(bits & 2)) {
-      const ring = a.rings[0];
-      for (let k = 1; k < ring.length; k++) {
-        if (proj.pointSegDist(x, y, ring[k - 1][0], ring[k - 1][1], ring[k][0], ring[k][1]) < 30) {
-          bits |= 2;
-          break;
-        }
-      }
-    }
+    else if (a.large && !a.industrial && !(bits & 2) && nearRing(x, y, a.rings[0], 30)) bits |= 2;
   }
   A.edgeGreen[j] = bits;
 }
@@ -510,62 +503,7 @@ writeFileSync(
   }),
 );
 
-// search index: named places, stations, named POIs, named streets (one entry per name per ~1 km)
-type Entry = [string, number, number, string]; // name, lon, lat, type
-const search: Entry[] = [];
-const seen = new Set<string>();
-const add = (name: string, lon: number, lat: number, type: string) => {
-  const k = `${name.toLowerCase()}|${lon.toFixed(3)}|${lat.toFixed(3)}`;
-  if (!name || seen.has(k)) return;
-  seen.add(k);
-  search.push([name, +lon.toFixed(5), +lat.toFixed(5), type]);
-};
-for (const f of fc.features) {
-  if (f.properties.kind === 'place' || f.properties.kind === 'station') {
-    const t = f.properties.tags ?? {};
-    const nm = (t['name:en'] || t.name || f.properties.name || '').trim();
-    if (f.geometry.type !== 'Point') continue;
-    const [lon, lat] = f.geometry.coordinates as LonLat;
-    if (inBox(lon, lat))
-      add(
-        nm,
-        lon,
-        lat,
-        f.properties.kind === 'station' ? 'station' : (poiCategory(t) ?? t.place ?? t.tourism ?? 'place'),
-      );
-  }
-}
-for (const p of pois) add(p.name, p.lon, p.lat, p.cat);
-// every other named place people search for: landmarks, markets, parks, colleges, malls, offices…
-const searchType = (t: Record<string, string>): string => {
-  if (t.tourism === 'attraction' || t.tourism === 'museum' || t.historic || t.tourism === 'viewpoint')
-    return 'landmark';
-  if (t.leisure === 'park' || t.leisure === 'garden') return 'park';
-  if (t.amenity === 'marketplace' || t.shop === 'mall' || t.shop === 'department_store') return 'market';
-  if (t.amenity === 'school' || t.amenity === 'college' || t.amenity === 'university' || t.amenity === 'kindergarten')
-    return 'school';
-  if (t.office || t.amenity === 'townhall') return 'office';
-  return 'place';
-};
-for (const f of fc.features) {
-  if (f.properties.kind !== 'poi' || f.geometry.type !== 'Point') continue;
-  const t = f.properties.tags ?? {};
-  if (poiCategory(t, 'poi')) continue; // already added as a safe place
-  const nm = (t['name:en'] || t.name || f.properties.name || '').trim();
-  const [lon, lat] = f.geometry.coordinates as LonLat;
-  if (nm && inBox(lon, lat)) add(nm, lon, lat, searchType(t));
-}
-const streetSeen = new Set<number>();
-for (let j = 0; j < M; j++) {
-  const k = A.edgeName[j];
-  if (k < 0) continue;
-  const [x, y] = mids[j];
-  const cell = Math.round(x * 100) * 1000 + Math.round(y * 100);
-  const sk = k * 1e7 + cell;
-  if (streetSeen.has(sk)) continue;
-  streetSeen.add(sk);
-  add(names[k], x, y, 'street');
-}
+const search = buildSearchIndex({ features: fc.features, pois, inBox, edgeName: A.edgeName, mids, names });
 writeFileSync(join(outDir, 'search.json'), JSON.stringify(search));
 log(
   `wrote graph.bin ${(bin.length / 1e6).toFixed(1)} MB (${N} nodes, ${M} edges, ${shapeCount} shape points), pois ${pois.length}, search ${search.length}`,
