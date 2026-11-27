@@ -41,17 +41,26 @@ function row(run: () => void, ...kids: (HTMLElement | string | null)[]): HTMLEle
   return h('li', { role: 'option', tabindex: 0, on: { click: run } }, ...kids);
 }
 
+const ME_WORDS = ['your location', 'my location', 'current location'];
+/** "Your location" is offered on an empty field or while typing it, never above a typed place name. */
+export const offersMe = (q: string): boolean => {
+  const t = q.trim().toLowerCase();
+  return !t || ME_WORDS.some((w) => w.startsWith(t));
+};
+
 /** Suggestions for a start / destination field. */
 function endSuggestions(which: End, q: string, done: (then: () => void) => () => void, rerender: () => void) {
   const near = fromLonLat() ?? [77.215, 28.6];
   const hits = search.query(q, intentFor(q) ? 4 : 7, near as [number, number]);
   const items: HTMLElement[] = [
-    row(
-      done(() => chooseEnd(which, 'me')),
-      h('span', { class: 'sic me-ic' }, icon('locate', 18)),
-      'Your location',
-      !myLonLat() ? h('small', null, 'not found yet') : null,
-    ),
+    offersMe(q)
+      ? row(
+          done(() => chooseEnd(which, 'me')),
+          h('span', { class: 'sic me-ic' }, icon('locate', 18)),
+          'Your location',
+          !myLonLat() ? h('small', null, 'not found yet') : null,
+        )
+      : null,
     // "gym": the nearest gyms (or similar) to the other end of the trip
     ...intentRows(q, near as LonLat, (p) => done(() => setEnd(which, browsePlace(p)))(), null, rerender),
     ...hits.map((x) =>
@@ -67,10 +76,10 @@ function endSuggestions(which: End, q: string, done: (then: () => void) => () =>
       h('span', { class: 'sic' }, icon('pin', 18)),
       'Choose on map',
     ),
-  ];
+  ].filter((x): x is HTMLElement => x !== null);
   if (q.length >= 2 && !hits.length)
     items.splice(
-      1,
+      offersMe(q) ? 1 : 0,
       0,
       h('li', { class: 'empty' }, `No place called “${q}” in Delhi. Try a nearby metro station or market.`),
     );
@@ -107,8 +116,8 @@ export function placeField(which: End): HTMLElement {
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      const opts = list.querySelectorAll('li[role=option]');
-      (opts[input.value.length >= 2 && opts.length > 2 ? 1 : 0] as HTMLElement | undefined)?.click();
+      // the best match is always first: "Your location" only leads while it is what is typed
+      list.querySelector<HTMLElement>('li[role=option]')?.click();
     }
     if (e.key === 'Escape') list.hidden = true;
   });
