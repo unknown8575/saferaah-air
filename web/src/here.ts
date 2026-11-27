@@ -107,7 +107,7 @@ export function explainNoLocation() {
         'p',
         null,
         S.loc.status === 'denied'
-          ? 'SafeRaah is not allowed to see your location. On your phone, allow location for this app or website in Settings, then tap the locate button again.'
+          ? 'SafeRaah Air is not allowed to see your location. On your phone, allow location for this app or website in Settings, then tap the locate button again.'
           : 'We are still waiting for GPS. Step near a window or open area.',
       ),
       h('p', null, 'Meanwhile you can mark where you are yourself: move the map so the pin is on your spot.'),

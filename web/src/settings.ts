@@ -119,7 +119,7 @@ function nameField(): HTMLInputElement {
 
 const PRIVACY_POINTS = [
   'Your location stays on this phone. Planning routes and guidance work without sending it anywhere.',
-  'Only during a trip, and only to show your family the live link and to check you really reached, your position goes to the SafeRaah server. It is deleted the moment the trip ends.',
+  'Only during a trip, and only to show your family the live link and to check you really reached, your position goes to the SafeRaah Air server. It is deleted the moment the trip ends.',
   'The two questions after a trip are optional and anonymous; no trip, route or comment is kept with your answer.',
   'Contacts and settings are kept only on this phone.',
 ];

@@ -105,7 +105,7 @@ Each case is automated. **U** = unit test (vitest, `tests/unit`), **A** = API te
 | TC-96 | E normal | Stop on route (demo pause) | "Are you OK?" countdown → no answer opens SOS with Call 112 | FR-14, FR-15 |
 | TC-97 | E edge | Server down | planning still works; journey says live sharing unavailable | NFR-4 |
 | TC-98 | E edge | Tap the map outside coverage | toast explains coverage | FR-1 |
-| TC-99 | E normal | Safe places near me, Hospitals chip, Help via menu | lists open/closed with pins; 6 guides load | FR-9, FR-22 |
+| TC-99 | E normal | Safe places near me, Hospitals chip, Help via menu; Escape on the guide; SOS with no contacts | lists open/closed with pins; 6 guides load; Escape returns home; SOS offers "Add a trusted contact", which opens settings | FR-9, FR-22, NFR-3 |
 | TC-100 | E edge | Every button/link has an accessible name; no horizontal scroll at 360 px | true | NFR-3 |
 | TC-101 | E normal | Desktop 1280 px | search/directions panel and sheet stacked on the left | NFR-3 |
 | TC-102 | E normal | After one visit, reload with the network off | app opens and plans routes | NFR-2 |

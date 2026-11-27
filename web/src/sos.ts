@@ -188,7 +188,19 @@ export async function openSos(auto = false) {
       h('a', { class: 'btn danger wide big', href: telLink('112') }, 'Call 112'),
       phones.length
         ? h('a', { class: 'btn primary wide', href: smsLink(phones, text) }, 'Send SOS SMS to all contacts')
-        : h('p', null, 'You have no trusted contacts yet.'),
+        : h(
+            'button',
+            {
+              class: 'btn wide',
+              on: {
+                click: () => {
+                  closeModal();
+                  hooks.showContacts();
+                },
+              },
+            },
+            'Add a trusted contact',
+          ),
       S.settings.contacts.map((c) =>
         h(
           'a',

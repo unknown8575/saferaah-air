@@ -196,8 +196,16 @@ async function boot() {
 }
 
 // ---------- misc ----------
+/** Screens whose back button Escape presses (keyboard users leave them like a dialog). */
+const ESC_BACK: ReadonlySet<string> = new Set(['contacts', 'help', 'details']);
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !modal.hidden && !checkTimer) closeModal();
+  if (e.key !== 'Escape') return;
+  if (!modal.hidden) {
+    if (!checkTimer) closeModal();
+    return;
+  }
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (!typing && ESC_BACK.has(S.view)) sheet.querySelector<HTMLButtonElement>('.summary .back')?.click();
 });
 if ('serviceWorker' in navigator && import.meta.env.PROD && !DEMO) {
   navigator.serviceWorker

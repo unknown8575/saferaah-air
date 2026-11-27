@@ -278,7 +278,7 @@ function liveLinkNote(J: Journey): HTMLElement {
   const why = isOnline()
     ? ''
     : navigator.onLine
-      ? 'Live trip links and reviews need the SafeRaah server, which this website is not connected to yet. Guidance, check-ins and SOS still work.'
+      ? 'Live trip links and reviews need the SafeRaah Air server, which this website is not connected to yet. Guidance, check-ins and SOS still work.'
       : 'Offline: live sharing and reviews need an internet connection.';
   return h('p', { class: 'fine' }, why);
 }

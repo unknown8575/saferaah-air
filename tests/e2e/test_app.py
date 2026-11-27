@@ -191,7 +191,7 @@ def tc97(b, base, static_base):
     ctx = b.new_context(**PHONE); page = ctx.new_page()
     page.goto(static_base + q(CP, IG, mode='walk', demo=1)); wait_routes(page)
     page.locator('#start').click()
-    expect(page.locator('#sheet')).to_contain_text('need the SafeRaah server', timeout=10000)
+    expect(page.locator('#sheet')).to_contain_text('need the SafeRaah Air server', timeout=10000)
     ctx.close()
 
 
@@ -209,7 +209,7 @@ def tc98(b, base):
     ctx.close()
 
 
-@case('TC-99', 'safe places nearby and the help guides')
+@case('TC-99', 'safe places nearby, the help guides, Escape to leave, SOS without contacts')
 def tc99(b, base):
     ctx = b.new_context(**PHONE); page = ctx.new_page()
     page.goto(base + '/?demo=1&t=13:00'); page.wait_for_selector('#q', timeout=20000); page.wait_for_timeout(1500)
@@ -228,6 +228,13 @@ def tc99(b, base):
     page.wait_for_timeout(2500)
     loaded = page.evaluate("() => [...document.querySelectorAll('.guide img')].filter(i => i.complete && i.naturalWidth > 0).length")
     assert loaded == 6, f'{loaded}/6 guide animations loaded'
+    # Escape leaves the guide like a dialog; SOS with no contacts offers to add one
+    page.keyboard.press('Escape')
+    page.wait_for_selector('.air-home', timeout=10000)
+    page.locator('#menu').click()
+    page.get_by_role('button', name='SOS: alert my contacts').click()
+    page.get_by_role('button', name='Add a trusted contact').click()
+    expect(page.locator('#sheet h2')).to_have_text('Contacts and settings')
     ctx.close()
 
 
