@@ -45,8 +45,7 @@ function precautionItems(r: RouteResult, mode: Mode, profile: Profile, dark: boo
 function precautionHeadline(r: RouteResult, mode: Mode, dark: boolean): string {
   const n = r.dangerSpots.length;
   const total = fmtM(r.dangerSpots.reduce((a, s) => a + s.lengthM, 0));
-  if (r.tier === 'green')
-    return n ? `Mostly busy and open; ${total} quieter` : 'Busy, open streets: no special precautions';
+  if (r.tier === 'green') return n ? `Mostly busy and open; ${total} quieter` : 'Street safety: busy, open streets';
   if (r.tier === 'yellow')
     return n
       ? `Stay alert on ${plural(n, 'quiet stretch')} (${total})`

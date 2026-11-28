@@ -170,12 +170,10 @@ function whoSelect(): HTMLSelectElement {
 /** One tab per travel mode, each with its fastest time. */
 function modeTabs(): HTMLElement {
   const pick = (m: Mode) => () => {
-    // tapping the mode already shown keeps it for the next trips too
-    if (m === S.settings.mode) {
-      S.settings = save({ mode: m, modePicked: true });
-      return;
-    }
+    const same = m === S.settings.mode;
+    // a picked mode (even the one already shown) is kept for the next trips
     S.settings = save({ mode: m, modePicked: true });
+    if (same) return;
     S.userPicked = false;
     openDirections();
   };

@@ -5,7 +5,6 @@ import { HttpError, readBody } from '../http.ts';
 import { assistantContext, chatHistory, obj } from '../validate.ts';
 import type { Ctx, Routes } from '../context.ts';
 
-/** A coordinate from the query string; null when missing, empty or not a number ("" would read as 0). */
 /** A plain decimal degree ("28.61", "-77.2"); hex, exponents, blanks and the like are refused. */
 function coordinate(v: string | null): number | null {
   if (v === null || v.length > 24 || !/^-?\d{1,3}(\.\d+)?$/.test(v)) return null;

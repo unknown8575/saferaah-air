@@ -142,7 +142,7 @@ describe('fastest time per mode and precautions', () => {
     const green = dres.routes.find((r) => r.tier === 'green');
     if (green)
       expect(routePrecautions(green, { mode: 'walk', profile: 'woman', when: day, pois }).headline).toMatch(
-        /Busy|Mostly busy/,
+        /busy, open streets|Mostly busy/,
       );
   });
 });

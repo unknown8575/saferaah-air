@@ -90,6 +90,15 @@ function autoAlternative(m: Extract<WorkerRequest, { type: 'route' }>) {
   return { mode: 'auto' as Mode, timeS: best.timeS, tier: best.tier, fastestS };
 }
 
+/** The air advice for a trip; the car time is worked out only when the warning will show. */
+function airAdviceFor(m: Extract<WorkerRequest, { type: 'route' }>, timeS: number) {
+  const base = { mode: m.mode, timeS, aqi: m.aqi ?? null, smogTrapped: m.smogTrapped };
+  const first = adviseAir(base);
+  if (!first || m.mode === 'car') return first;
+  const car = routeOnce(m.from, m.to, 'car', m.when, m.profile).routes;
+  return adviseAir({ ...base, carS: car.length ? Math.min(...car.map((r) => r.timeS)) : undefined });
+}
+
 /** A route plus what the screens need: turn steps, colours per segment, safe places, precautions. */
 function forScreen(r: RouteResult, m: Extract<WorkerRequest, { type: 'route' }>, risk: RiskField): WorkerRoute {
   return {
@@ -125,15 +134,7 @@ function routes(m: Extract<WorkerRequest, { type: 'route' }>): RouteReply {
       vehicleAltS: vehicleAlt,
       contacts: m.contacts,
     }),
-    airAdvice: res.routes.length
-      ? adviseAir({
-          mode: m.mode,
-          timeS: Math.min(...res.routes.map((r) => r.timeS)),
-          aqi: m.aqi ?? null,
-          smogTrapped: m.smogTrapped,
-          vehicleAlt: vehicleAlt && { mode: vehicleAlt.mode, timeS: vehicleAlt.fastestS ?? vehicleAlt.timeS },
-        })
-      : null,
+    airAdvice: res.routes.length ? airAdviceFor(m, Math.min(...res.routes.map((r) => r.timeS))) : null,
     snapped: {
       from: res.from ? [res.from.lon, res.from.lat] : m.from,
       to: res.to ? [res.to.lon, res.to.lat] : m.to,

@@ -19,7 +19,7 @@ CI (`.github/workflows/ci.yml`) runs typecheck, lint, the unit/API/UI tests with
 
 ## Coverage (shared/, server/ and the pure UI modules)
 
-182 unit, UI and API tests. Statements ≈ 95 %, branches ≈ 85 %, functions ≈ 97 %, lines ≈ 97 %. Thresholds enforced: 85 / 75 / 85 / 90.
+183 unit, UI and API tests. Statements ≈ 95 %, branches ≈ 85 %, functions ≈ 97 %, lines ≈ 97 %. Thresholds enforced: 85 / 75 / 85 / 90.
 
 ## Conventions
 

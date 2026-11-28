@@ -41,7 +41,8 @@ Each case is automated. **U** = unit test (vitest, `tests/unit`), **A** = API te
 | TC-29 | U normal | Explanation fields | havens, police share, danger spots with reasons | FR-6 |
 | TC-30 | U normal | Walking at 23:30 is risky everywhere | advice suggests auto with its time | FR-8 |
 | TC-30b | U edge | Route advice with and without a trusted contact | the arrival message is promised only when a contact is saved | FR-8 |
-| TC-30c | U normal/edge | Very poor air (AQI 336), smog trapped, a 2 h 34 min walk; poor / very poor / severe air near each time limit; a car; moderate air; no reading | "Very poor air (AQI 336): 2 h 34 min on foot", smog-trapped note, auto time, N95, suggests a car; warnings from 30 / 15 / 10 min; none for a car, moderate air or no data | FR-33, FR-36 |
+| TC-30c | U normal/edge | Very poor air (AQI 336), smog trapped, a 2 h 34 min walk; poor / very poor / severe air near each time limit; a car; moderate air; no reading | "Very poor air (AQI 336): 2 h 34 min on foot", smog-trapped note, the car / cab time, N95, a "Show car / cab routes" button (text and button agree); warnings from 30 / 15 / 10 min; none for moderate air or no data | FR-33, FR-36 |
+| TC-30e | U normal | Car mode at AQI 347; car mode in moderate air | "windows up, AC on recirculate", no mode switch; nothing in moderate air | FR-33, FR-36 |
 | TC-30d | U normal | No travel mode picked yet; trips of 0.8 km, 3 km, 3+ km | short trips open on foot, longer ones on an auto | FR-8, FR-33 |
 | TC-31 | U normal | Turn-by-turn steps | start step, ≥1 turn, final "arrived"; distances sum ≈ route length | FR-10 |
 | TC-32 | U normal | Whole Delhi: Narela→Najafgarh (scooty), Dwarka→Laxmi Nagar (auto), Mangolpuri→Sultanpuri (walk) | routes found in < 4 s, length between crow-flight and 2.2× | FR-3 |

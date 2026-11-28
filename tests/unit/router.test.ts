@@ -217,21 +217,17 @@ describe('tiered routes (FR-3, FR-4)', () => {
     expect(ok?.body).not.toContain('arrival message to your contacts');
   });
 
-  it('TC-30c a long time in bad air on an open mode gets an air warning that suggests a closed car', () => {
+  it('TC-30c a long time in bad air on an open mode gets an air warning that points to a closed car', () => {
     const vp = { value: 336, band: 'verypoor' as const };
-    const walk = adviseAir({
-      mode: 'walk',
-      timeS: 9240,
-      aqi: vp,
-      smogTrapped: true,
-      vehicleAlt: { mode: 'auto', timeS: 1500 },
-    });
+    const walk = adviseAir({ mode: 'walk', timeS: 9240, aqi: vp, smogTrapped: true, carS: 2580 });
     expect(walk?.level).toBe('warn');
     expect(walk?.title).toBe('Very poor air (AQI 336): 2 h 34 min on foot');
     expect(walk?.body).toContain('Smog is trapped');
-    expect(walk?.body).toContain('By auto it takes about 25 min');
-    expect(walk?.body).toContain('N95');
+    // the text and the button point the same way: a closed car or cab
+    expect(walk?.body).toContain('By car or cab it takes about 43 min');
     expect(walk?.suggestMode).toBe('car');
+    expect(walk?.body).toContain('N95');
+    expect(adviseAir({ mode: 'walk', timeS: 9240, aqi: vp })?.body).toContain('A closed car or cab');
     // thresholds: poor 30 min (caution), very poor 15 min, severe 10 min
     expect(adviseAir({ mode: 'auto', timeS: 29 * 60, aqi: { value: 250, band: 'poor' } })).toBeNull();
     expect(adviseAir({ mode: 'auto', timeS: 31 * 60, aqi: { value: 250, band: 'poor' } })?.level).toBe('caution');
@@ -239,10 +235,17 @@ describe('tiered routes (FR-3, FR-4)', () => {
     expect(adviseAir({ mode: 'twowheeler', timeS: 11 * 60, aqi: { value: 420, band: 'severe' } })?.title).toContain(
       'on a two-wheeler',
     );
-    // a closed car, clean air or no reading: no air warning
-    expect(adviseAir({ mode: 'car', timeS: 9000, aqi: vp })).toBeNull();
+    // moderate air or no reading: nothing
     expect(adviseAir({ mode: 'walk', timeS: 9000, aqi: { value: 150, band: 'moderate' } })).toBeNull();
     expect(adviseAir({ mode: 'walk', timeS: 9000, aqi: null })).toBeNull();
+  });
+
+  it('TC-30e in a car in bad air: windows up, AC on recirculate (no mode switch offered)', () => {
+    const car = adviseAir({ mode: 'car', timeS: 600, aqi: { value: 347, band: 'verypoor' } });
+    expect(car?.level).toBe('caution');
+    expect(car?.body).toContain('recirculate');
+    expect(car?.suggestMode).toBeUndefined();
+    expect(adviseAir({ mode: 'car', timeS: 600, aqi: { value: 150, band: 'moderate' } })).toBeNull();
   });
 
   it('TC-30d with no mode picked, long trips open on an auto and short ones on foot', () => {

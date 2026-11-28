@@ -118,10 +118,20 @@ function duration(s: number): string {
   return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
 }
 
+/** Advice inside a closed car when the air outside is poor or worse. */
+function closedCarAdvice(aqi: { value: number; band: AqiBand }): Advice {
+  return {
+    level: 'caution',
+    title: `${AQI_BANDS[aqi.band].label} air outside (AQI ${aqi.value}): keep it out of the car`,
+    body: 'Windows up and AC on recirculate; the closed cabin keeps out most of the smoke. Open the windows only once you are out of heavy traffic.',
+  };
+}
+
 /**
- * A warning when the trip means breathing bad air for a long time: poor air for 30+ min,
- * very poor for 15+ min or severe for 10+ min in an open mode (walk, two-wheeler, auto).
- * It names the time in the air, says when smog is trapped, and suggests a closed car or cab.
+ * Air advice for the routes screen. In an open mode (walk, two-wheeler, auto) it warns when the trip
+ * means breathing bad air for long (poor air 30+ min, very poor 15+ min, severe 10+ min), says when
+ * smog is trapped and points to a closed car or cab (with its time, when known) and its button.
+ * In a car in poor or worse air it says to keep the windows up on recirculate.
  */
 export function adviseAir(o: {
   mode: Mode;
@@ -129,23 +139,25 @@ export function adviseAir(o: {
   timeS: number;
   aqi: { value: number; band: AqiBand } | null;
   smogTrapped?: boolean;
-  /** an auto over the same trip, when walking */
-  vehicleAlt?: { mode: Mode; timeS: number };
+  /** the quickest closed car / cab over the same trip, s */
+  carS?: number;
 }): Advice | null {
-  const how = OPEN_AIR[o.mode];
   const limit = o.aqi ? AIR_LIMIT_MIN[o.aqi.band] : undefined;
-  if (!o.aqi || !how || limit === undefined || o.timeS < limit * 60) return null;
-  const alt =
-    o.vehicleAlt && o.vehicleAlt.timeS < o.timeS
-      ? `By ${MODE_INFO[o.vehicleAlt.mode].label.toLowerCase()} it takes about ${duration(o.vehicleAlt.timeS)}, far less time in this air. `
-      : '';
+  if (!o.aqi || limit === undefined) return null;
+  if (o.mode === 'car') return closedCarAdvice(o.aqi);
+  const how = OPEN_AIR[o.mode];
+  if (!how || o.timeS < limit * 60) return null;
+  const car =
+    o.carS !== undefined && o.carS < o.timeS
+      ? `By car or cab it takes about ${duration(o.carS)}, with the windows up: far less of this air. `
+      : 'A closed car or cab with the windows up keeps most of it out. ';
   return {
     level: o.aqi.band === 'poor' ? 'caution' : 'warn',
     title: `${AQI_BANDS[o.aqi.band].label} air (AQI ${o.aqi.value}): ${duration(o.timeS)} ${how}`,
     body:
       (o.smogTrapped ? 'Smog is trapped near the ground right now, so it will not clear on the way. ' : '') +
-      alt +
-      'A closed car or cab, or the metro, keeps most of it out. If you go this way, wear a well-fitted N95 and pick the cleanest-air route.',
+      car +
+      'The metro is a good choice too. If you go this way, wear a well-fitted N95 and pick the cleanest-air route.',
     suggestMode: 'car',
   };
 }
